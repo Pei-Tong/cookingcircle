@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,7 +16,36 @@ import { Switch } from "@/components/ui/switch";
 import { Navigation } from "@/components/layout/Navigation";
 import { Footer } from "@/components/layout/Footer";
 
+// Types for our recipe data
+interface Nutrition {
+  calories: string;
+  protein: string;
+  carbohydrates: string;
+  fat: string;
+  fiber: string;
+  sugar: string;
+}
+
+interface Ingredient {
+  name: string;
+  amount: string;
+  unit: string;
+}
+
+interface Recipe {
+  title: string;
+  description: string;
+  "prep-time": string;
+  cooking_time: string;
+  servings: string;
+  difficulty: string;
+  tags: string[];
+}
+
 export default function CreateRecipe() {
+  const router = useRouter();
+  const supabase = createClientComponentClient();
+
   // Tab control state
   const [activeTab, setActiveTab] = useState("details");
   // Toggle nutrition fields
@@ -23,19 +54,20 @@ export default function CreateRecipe() {
   const [recipe, setRecipe] = useState({
     title: "",
     description: "",
-    prepTime: "",
-    cookTime: "",
+    "prep-time": "",
+    cooking_time: "",
     servings: "",
     difficulty: "",
-    tags: [],
-    nutrition: {
+    tags: [] as string[],
+  });
+  // Nutrition state
+  const [nutrition, setNutrition] = useState({
       calories: "",
       protein: "",
-      carbs: "",
+    carbohydrates: "",
       fat: "",
       fiber: "",
       sugar: "",
-    },
   });
   // Ingredients and instructions as arrays
   const [ingredients, setIngredients] = useState([{ name: "", amount: "", unit: "" }]);
@@ -59,20 +91,17 @@ export default function CreateRecipe() {
   ];
 
   // Update recipe detail fields
-  const handleRecipeChange = (field, value) => {
+  const handleRecipeChange = (field: keyof Recipe, value: string | string[]) => {
     setRecipe((prev) => ({ ...prev, [field]: value }));
   };
 
   // Update nutrition fields
-  const handleNutritionChange = (field, value) => {
-    setRecipe((prev) => ({
-      ...prev,
-      nutrition: { ...prev.nutrition, [field]: value },
-    }));
+  const handleNutritionChange = (field: keyof Nutrition, value: string) => {
+    setNutrition((prev) => ({ ...prev, [field]: value }));
   };
 
   // Ingredients handlers
-  const handleIngredientChange = (index, field, value) => {
+  const handleIngredientChange = (index: number, field: keyof Ingredient, value: string) => {
     const updated = [...ingredients];
     updated[index][field] = value;
     setIngredients(updated);
@@ -82,12 +111,12 @@ export default function CreateRecipe() {
     setIngredients((prev) => [...prev, { name: "", amount: "", unit: "" }]);
   };
 
-  const removeIngredient = (index) => {
+  const removeIngredient = (index: number) => {
     setIngredients((prev) => prev.filter((_, i) => i !== index));
   };
 
   // Instructions handlers
-  const handleInstructionChange = (index, value) => {
+  const handleInstructionChange = (index: number, value: string) => {
     const updated = [...instructions];
     updated[index] = value;
     setInstructions(updated);
@@ -97,19 +126,18 @@ export default function CreateRecipe() {
     setInstructions((prev) => [...prev, ""]);
   };
 
-  const removeInstruction = (index) => {
+  const removeInstruction = (index: number) => {
     setInstructions((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // File upload handler – now allows multiple files
-  const handleImageUpload = (e) => {
-    const files = Array.from(e.target.files);
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
     if (files.length) {
       setImages((prev) => [...prev, ...files]);
     }
   };
 
-  const removeImage = (index) => {
+  const removeImage = (index: number) => {
     setImages((prev) => prev.filter((_, i) => i !== index));
   };
 
@@ -122,16 +150,97 @@ export default function CreateRecipe() {
     setIsAddingTag(false);
   };
 
-  // On publish, gather all data (this example logs to console)
-  const handlePublish = () => {
+  // On publish, save to Supabase
+  const handlePublish = async () => {
+    try {
+      // First, upload images to Supabase Storage and get the first image URL
+      let image_url = null;
+      if (images.length > 0) {
+        const file = images[0]; // Take only the first image
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Math.random()}.${fileExt}`;
+        const filePath = `recipe-images/${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('recipe-images')
+          .upload(filePath, file);
+
+        if (uploadError) throw uploadError;
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('recipe-images')
+          .getPublicUrl(filePath);
+
+        image_url = publicUrl;
+      }
+
+      // Prepare recipe data (without ingredients and instructions)
     const recipeData = {
       ...recipe,
-      ingredients,
-      instructions,
-      images,
-    };
-    console.log("Publishing recipe:", recipeData);
-    alert("Recipe published! Check the console for details.");
+        image_url,
+        created_at: new Date().toISOString(),
+      };
+
+      // Insert recipe into Supabase and get the inserted recipe
+      const { data: insertedRecipe, error: insertError } = await supabase
+        .from('recipes')
+        .insert([recipeData])
+        .select()
+        .single();
+
+      if (insertError) throw insertError;
+
+      // Insert ingredients into the ingredients table
+      if (ingredients.length > 0) {
+        const ingredientsData = ingredients.map(ingredient => ({
+          recipe_id: insertedRecipe.id,
+          name: ingredient.name,
+          quantity: ingredient.amount, // Changed from amount to quantity to match DB schema
+          unit: ingredient.unit
+        }));
+
+        const { error: ingredientsError } = await supabase
+          .from('ingredients')
+          .insert(ingredientsData);
+
+        if (ingredientsError) throw ingredientsError;
+      }
+
+      // Insert instructions into the instructions table
+      if (instructions.length > 0) {
+        const instructionsData = instructions.map((description, index) => ({
+          recipe_id: insertedRecipe.id,
+          step_number: index + 1,
+          description
+        }));
+
+        const { error: instructionsError } = await supabase
+          .from('instructions')
+          .insert(instructionsData);
+
+        if (instructionsError) throw instructionsError;
+      }
+
+      // If nutrition data is provided, insert it into the recipe_nutrition table
+      if (showNutrition && Object.values(nutrition).some(value => value !== "")) {
+        const nutritionData = {
+          recipe_id: insertedRecipe.id,
+          ...nutrition
+        };
+
+        const { error: nutritionError } = await supabase
+          .from('recipe_nutrition')
+          .insert([nutritionData]);
+
+        if (nutritionError) throw nutritionError;
+      }
+
+      // Redirect to the recipes page or show success message
+      alert('Recipe added successfully!');
+    } catch (error) {
+      console.error('Error publishing recipe:', error);
+      alert('Failed to publish recipe. Please try again.');
+    }
   };
 
   return (
@@ -196,8 +305,8 @@ export default function CreateRecipe() {
                         id="prep-time"
                         type="number"
                         placeholder="15"
-                        value={recipe.prepTime}
-                        onChange={(e) => handleRecipeChange("prepTime", e.target.value)}
+                        value={recipe["prep-time"]}
+                        onChange={(e) => handleRecipeChange("prep-time", e.target.value)}
                       />
                     </div>
                     <div className="space-y-2">
@@ -206,8 +315,8 @@ export default function CreateRecipe() {
                         id="cook-time"
                         type="number"
                         placeholder="30"
-                        value={recipe.cookTime}
-                        onChange={(e) => handleRecipeChange("cookTime", e.target.value)}
+                        value={recipe.cooking_time}
+                        onChange={(e) => handleRecipeChange("cooking_time", e.target.value)}
                       />
                     </div>
                   </div>
@@ -232,9 +341,9 @@ export default function CreateRecipe() {
                           <SelectValue placeholder="Select difficulty" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="easy">Easy</SelectItem>
-                          <SelectItem value="medium">Medium</SelectItem>
-                          <SelectItem value="hard">Hard</SelectItem>
+                          <SelectItem value="Easy">Easy</SelectItem>
+                          <SelectItem value="Medium">Medium</SelectItem>
+                          <SelectItem value="Hard">Hard</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -370,7 +479,7 @@ export default function CreateRecipe() {
                             id="calories"
                             type="number"
                             placeholder="320"
-                            value={recipe.nutrition.calories}
+                            value={nutrition.calories}
                             onChange={(e) => handleNutritionChange("calories", e.target.value)}
                           />
                         </div>
@@ -380,18 +489,18 @@ export default function CreateRecipe() {
                             id="protein"
                             type="number"
                             placeholder="12"
-                            value={recipe.nutrition.protein}
+                            value={nutrition.protein}
                             onChange={(e) => handleNutritionChange("protein", e.target.value)}
                           />
                         </div>
                         <div className="space-y-2">
-                          <Label htmlFor="carbs">Carbohydrates (g)</Label>
+                          <Label htmlFor="carbohydrates">Carbohydrates (g)</Label>
                           <Input
-                            id="carbs"
+                            id="carbohydrates"
                             type="number"
                             placeholder="42"
-                            value={recipe.nutrition.carbs}
-                            onChange={(e) => handleNutritionChange("carbs", e.target.value)}
+                            value={nutrition.carbohydrates}
+                            onChange={(e) => handleNutritionChange("carbohydrates", e.target.value)}
                           />
                         </div>
                         <div className="space-y-2">
@@ -400,7 +509,7 @@ export default function CreateRecipe() {
                             id="fat"
                             type="number"
                             placeholder="10"
-                            value={recipe.nutrition.fat}
+                            value={nutrition.fat}
                             onChange={(e) => handleNutritionChange("fat", e.target.value)}
                           />
                         </div>
@@ -410,7 +519,7 @@ export default function CreateRecipe() {
                             id="fiber"
                             type="number"
                             placeholder="2"
-                            value={recipe.nutrition.fiber}
+                            value={nutrition.fiber}
                             onChange={(e) => handleNutritionChange("fiber", e.target.value)}
                           />
                         </div>
@@ -420,7 +529,7 @@ export default function CreateRecipe() {
                             id="sugar"
                             type="number"
                             placeholder="5"
-                            value={recipe.nutrition.sugar}
+                            value={nutrition.sugar}
                             onChange={(e) => handleNutritionChange("sugar", e.target.value)}
                           />
                         </div>

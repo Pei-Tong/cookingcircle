@@ -451,4 +451,3 @@ export default function RecipeDetail({ params }: { params: { id: string } }) {
     </>
   )
 }
-
