@@ -63,7 +63,7 @@ export function Navigation() {
           <Button variant="ghost" size="icon" className="relative" href="/shopping-list">
             <ShoppingCart className="h-5 w-5" />
             <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center">
-              3
+              5
             </span>
           </Button>
           <Button variant="ghost" size="icon" className="relative">
