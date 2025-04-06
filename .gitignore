@@ -24,7 +24,3 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
-next-env.d.tspublic/Food_Image/
-public/Ingredients_Image/
-public/Kitchenware_Image/
-public/Footer_Image/
