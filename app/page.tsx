@@ -68,6 +68,8 @@ interface Recipe {
   tags: string[]
   likes_count: number
   views_count: number
+  user_id: string
+  username: string
 }
 interface Ingredient {
   id: string
@@ -167,27 +169,37 @@ export default function Home() {
   useEffect(() => {
     async function fetchRecipes() {
       const { data, error } = await supabase.from("recipes")
-      .select("*")
+      .select("*, users!recipes_user_id_fkey(username)")
       .order("likes_count", { ascending: false })
       .limit(4)
 
       if (error) {
         console.error("Supabase fetch error:", error)
       } else {
-        console.log(" Supabase fetch success! Data:", data)
-        setRecipes(data)
+        console.log("Supabase fetch success! Data:", data)
+        // Transform data to include username from the joined users table
+        const recipesWithUsername = data.map(recipe => ({
+          ...recipe,
+          username: recipe.users?.username || "Anonymous"
+        }))
+        setRecipes(recipesWithUsername)
       }
     }
 
     async function fetchTrending() {
       const { data, error } = await supabase
         .from("recipes")
-        .select("*")
+        .select("*, users!recipes_user_id_fkey(username)")
         .order("views_count", { ascending: false })
         .limit(4)
 
       if (!error && data) {
-        setTrendingRecipes(data)
+        // Transform data to include username
+        const trendingWithUsername = data.map(recipe => ({
+          ...recipe,
+          username: recipe.users?.username || "Anonymous"
+        }))
+        setTrendingRecipes(trendingWithUsername)
       }
     }
 
@@ -330,24 +342,25 @@ const handleSearch = (query: string) => {
       {/* Main Content */}
       <div className="max-w-[1200px] mx-auto px-4 py-6 md:py-8">
         {/* Filter pills */}
-        <div className="flex gap-2 mb-6 md:mb-10 flex-wrap">
-          <div className="w-full flex justify-between items-center mb-2">
-            <div className="font-medium text-sm md:text-base">Categories & Dietary Restrictions</div>
-            <Button variant="ghost" size="sm" onClick={() => setActiveFilter("All")} className="text-sm">
-              Clear Filters
-            </Button>
-          </div>
-          <div className="flex gap-2 flex-wrap max-h-[120px] md:max-h-none overflow-y-auto pb-2">
-            {filterCategories.map((filter) => (
-              <FilterPill
-                key={filter}
-                label={filter}
-                active={activeFilter === filter}
-                onClick={() => handleFilterClick(filter)}
-              />
-            ))}
-          </div>
+        {/* Categories section - Completely hidden for demo */}
+        {/* 
+        <div className="flex justify-between items-center mb-2">
+          <h3 className="font-medium text-sm md:text-base">Categories & Dietary Restrictions</h3>
+          <Button variant="ghost" size="sm" onClick={() => setActiveFilter("All")} className="text-sm">
+            Clear Filters
+          </Button>
         </div>
+        <div className="flex gap-2 flex-wrap max-h-[120px] md:max-h-none overflow-y-auto pb-2">
+          {filterCategories.map((filter) => (
+            <FilterPill
+              key={filter}
+              label={filter}
+              active={activeFilter === filter}
+              onClick={() => handleFilterClick(filter)}
+            />
+          ))}
+        </div>
+        */}
 
         {/* Recipe sections */}
         <div className="space-y-8 md:space-y-16">
@@ -369,6 +382,8 @@ const handleSearch = (query: string) => {
               tags={recipe.tags}
               likes={recipe.likes_count}
               views={recipe.views_count}
+              user_id={recipe.user_id}
+              username={recipe.username}
             />
           ))}
             </div>
@@ -392,16 +407,16 @@ const handleSearch = (query: string) => {
                 tags={recipe.tags}
                 likes={recipe.likes_count}
                 views={recipe.views_count}
+                user_id={recipe.user_id}
+                username={recipe.username}
               />
               ))}
             </div>
           </section>
 
-          {/* You May Want to Buy Section */}
           <section>
             <h2 className="text-2xl font-semibold tracking-tight mb-8">You may be interested in...</h2>
 
-            {/* Ingredients Section */}
             <div className="mb-12">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-xl font-semibold tracking-tight">Ingredients</h3>
@@ -413,19 +428,19 @@ const handleSearch = (query: string) => {
                 {recommendedIngredients.map((product) => (
                   <ProductCard
                     key={product.id}
+                    id={product.id}
                     name={product.name}
                     image={product.ingredient_image_url || "/Ingredients_Image/default.jpg"}
                     description={product.ingredient_description || "Handpicked high-quality ingredient"}
                     rating={4.8}
                     purchases={Math.floor(Math.random() * 1000) + 100}
                     price="$9.99"
-                    onAddToCart={() => console.log("Added to cart:", product.name)}
+                    productType="ingredient"
                   />
                 ))}
-                </div>
               </div>
+            </div>
 
-            {/* Kitchenware Section */}
             <div className="mb-12">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-xl font-semibold tracking-tight">Kitchenware</h3>
@@ -437,13 +452,14 @@ const handleSearch = (query: string) => {
               {kitchenware.map((item) => (
                 <ProductCard
                     key={item.product_id}
+                    id={item.product_id}
                     name={item.name}
                     image={item.image_url || "/Kitchenware_Image/default.jpg"}
                     description={item.description}
                     rating={item.rating}
                     purchases={item.purchases}
                     price={`$${item.price}`}
-                    onAddToCart={() => console.log("Add to cart:", item.name)}
+                    productType="kitchenware"
                 />
               ))}
               </div>
