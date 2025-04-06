@@ -1,5 +1,6 @@
 "use client"
 
+import { supabase } from "@/lib/supabaseClient"
 import { useState, useEffect, useRef } from "react"
 import { ProductCard } from "@/components/recipe/ProductCard"
 import { RecipeCard } from "@/components/recipe/RecipeCard"
@@ -58,161 +59,33 @@ const hotSearchKeywords = [
 
 const allergenKeywords = ["Vegan", "Lactose-Free", "Gluten-Free"]
 
-const popularRecipes = [
-  {
-    id: "1",
-    title: "Homemade Margherita Pizza",
-    image: "/Food_Image/Margherita_Pizza.webp",
-    description: "Classic Italian pizza with fresh mozzarella, tomatoes, and basil",
-    tags: ["Italian", "Vegetarian"],
-    likes: 128,
-    views: 1024,
-  },
-  {
-    id: "2",
-    title: "Avocado Toast with Poached Eggs",
-    image: "/Food_Image/Avocado_Toast_with_eggs.jpeg",
-    description: "Creamy avocado on toasted bread topped with perfectly poached eggs",
-    tags: ["Breakfast", "Healthy"],
-    likes: 95,
-    views: 876,
-  },
-  {
-    id: "3",
-    title: "Thai Green Curry",
-    image: "/Food_Image/Thai_green_curry.jpg",
-    description: "Aromatic and spicy Thai curry with vegetables and coconut milk",
-    tags: ["Thai", "Spicy"],
-    likes: 156,
-    views: 1432,
-  },
-  {
-    id: "4",
-    title: "Chocolate Chip Cookies",
-    image: "/Food_Image/Chocolate_chip_cookies.jpg",
-    description: "Classic homemade cookies with gooey chocolate chips",
-    tags: ["Dessert", "Baking"],
-    likes: 210,
-    views: 1876,
-  },
-]
+interface Recipe {
+  recipe_id: string
+  title: string
+  description: string
+  image_url: string
+  tags: string[]
+  likes_count: number
+  views_count: number
+}
+interface Ingredient {
+  id: string
+  name: string
+  ingredient_image_url?: string
+  ingredient_description?: string
+}
 
-const trendingRecipes = [
-  {
-    id: "5",
-    title: "Korean Bibimbap",
-    image: "/Food_Image/Korean_bibimbap.jpeg",
-    description: "Colorful rice bowl with vegetables, meat, and spicy gochujang sauce",
-    tags: ["Korean", "Spicy"],
-    likes: 178,
-    views: 1532,
-  },
-  {
-    id: "6",
-    title: "Vegan Mushroom Risotto",
-    image: "/Food_Image/Vegan_mushroom_risotto.jpg",
-    description: "Creamy Italian rice dish with mushrooms and herbs",
-    tags: ["Italian", "Vegan"],
-    likes: 87,
-    views: 943,
-  },
-  {
-    id: "7",
-    title: "Beef Wellington",
-    image: "/Food_Image/Beef_wellington.avif",
-    description: "Tender beef fillet wrapped in puff pastry with mushroom duxelles",
-    tags: ["British", "Special Occasion"],
-    likes: 132,
-    views: 1245,
-  },
-  {
-    id: "8",
-    title: "Lemon Blueberry Pancakes",
-    image: "/Food_Image/Blueberry_pancakes.jpg",
-    description: "Fluffy pancakes with fresh blueberries and lemon zest",
-    tags: ["Breakfast", "Sweet"],
-    likes: 104,
-    views: 987,
-  },
-]
-
-const recommendedIngredients = [
-  {
-    id: "i1",
-    name: "Premium Italian Extra Virgin Olive Oil",
-    image: "/Ingredients_Image/Premium_Italian_Extra_Virgin_Olive_Oil.webp",
-    description: "Cold-pressed, single-origin olive oil from Tuscany. Perfect for cooking and finishing dishes.",
-    rating: 4.8,
-    purchases: 1234,
-    price: "$24.99",
-  },
-  {
-    id: "i2",
-    name: "Himalayan Pink Salt",
-    image: "/Ingredients_Image/Himalayan_Pink_Salt.webp",
-    description: "Pure, unrefined mineral salt with natural pink color. Enhances flavor in all dishes.",
-    rating: 4.7,
-    purchases: 2156,
-    price: "$8.99",
-  },
-  {
-    id: "i3",
-    name: "Aged Balsamic Vinegar",
-    image: "/Ingredients_Image/Aged_Balsamic_Vinegar.jpg",
-    description: "12-year aged balsamic from Modena, Italy. Rich, complex flavor perfect for dressing and marinades.",
-    rating: 4.9,
-    purchases: 876,
-    price: "$29.99",
-  },
-  {
-    id: "i4",
-    name: "Organic Saffron Threads",
-    image: "/Ingredients_Image/Organic_Saffron_Threads.jpg",
-    description: "Premium grade Spanish saffron. Adds authentic color and aroma to paella and risotto.",
-    rating: 4.8,
-    purchases: 543,
-    price: "$18.99",
-  },
-]
-
-const recommendedKitchenware = [
-  {
-    id: "k1",
-    name: "Professional Chef's Knife",
-    image: "/Kitchenware_Image/Professional_Chef's_Knife.jpg",
-    description: "8-inch high-carbon stainless steel blade. Perfect balance and precision cutting.",
-    rating: 4.9,
-    purchases: 3421,
-    price: "$129.99",
-  },
-  {
-    id: "k2",
-    name: "Cast Iron Skillet",
-    image: "/Kitchenware_Image/Cast_Iron_Skillet.jpg",
-    description: "Pre-seasoned 12-inch skillet. Superior heat retention and versatility.",
-    rating: 4.8,
-    purchases: 5632,
-    price: "$49.99",
-  },
-  {
-    id: "k3",
-    name: "Stand Mixer",
-    image: "/Kitchenware_Image/Stand_Mixer.jpg",
-    description: "Professional-grade 5-quart mixer. 10 speeds with multiple attachments included.",
-    rating: 4.9,
-    purchases: 2187,
-    price: "$299.99",
-  },
-  {
-    id: "k4",
-    name: "Digital Kitchen Scale",
-    image: "/Kitchenware_Image/Digital_Kitchen_Scale.avif",
-    description: "Precise measurements in grams and ounces. Essential for baking and portion control.",
-    rating: 4.7,
-    purchases: 1876,
-    price: "$24.99",
-  },
-]
+interface Product {
+  product_id: string
+  name: string
+  description: string
+  price: number
+  image_url: string
+  category: string
+  rating: number
+  purchases: number
+  in_stock: boolean
+}
 
 interface FilterPillProps {
   label: string
@@ -238,55 +111,39 @@ interface SearchBarProps {
   onSearch: (query: string) => void
 }
 
-/*
-export function SearchBar({ placeholder, onSearch }: SearchBarProps) {
-  return (
-    <div className="relative w-full">
-      <Input
-        type="search"
-        placeholder={placeholder}
-        onChange={(e) => onSearch(e.target.value)}
-        className="w-full pl-12 py-2 md:py-3 pr-4 text-sm md:text-base rounded-md border-gray-200 bg-white focus:border-gray-300 focus:ring-0"
-      />
-      <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 md:h-5 md:w-5 text-gray-400" />
-    </div>
-  )
-}
-*/
-
 export function SearchBar({ placeholder }: { placeholder: string }) {
-  const [searchQuery, setSearchQuery] = useState(""); // ✅ 검색어 상태 저장
+  const [searchQuery, setSearchQuery] = useState("");
   const router = useRouter();
 
-  // 검색 실행 함수
+  // search part
   const handleSearch = () => {
     if (searchQuery.trim() === "") {
-      alert("Please enter a search query!"); // ✅ 빈 검색어 방지
+      alert("Please enter a search query!");
       return;
     }
-    router.push(`/search?query=${encodeURIComponent(searchQuery)}`); // ✅ 검색 페이지로 이동
+    router.push(`/search?query=${encodeURIComponent(searchQuery)}`); 
   };
 
   return (
     <div className="relative w-full">
-      {/* 검색 입력창 */}
+      {/* search input */}
       <Input
         type="search"
         placeholder={placeholder}
         value={searchQuery}
-        onChange={(e) => setSearchQuery(e.target.value)} // ✅ 입력 시 상태 업데이트만 함
+        onChange={(e) => setSearchQuery(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter") handleSearch(); // ✅ Enter 입력 시 검색 실행
+          if (e.key === "Enter") handleSearch();
         }}
         className="w-full pl-12 py-2 md:py-3 pr-4 text-sm md:text-base rounded-md border-gray-200 bg-white focus:border-gray-300 focus:ring-0"
       />
 
-      {/* 검색 아이콘 */}
+      {/* search icon */}
       <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 md:h-5 md:w-5 text-gray-400" />
 
-      {/* 검색 버튼 (클릭하면 검색 실행) */}
+      {/* search button */}
       <button
-        onClick={handleSearch} // ✅ 버튼 클릭 시 검색 실행
+        onClick={handleSearch}
         className="absolute right-4 top-1/2 transform -translate-y-1/2 h-8 px-3 bg-black text-white rounded-md text-sm"
       >
         Find
@@ -295,128 +152,82 @@ export function SearchBar({ placeholder }: { placeholder: string }) {
   );
 }
 
-/*
-function Navigation() {
-  const [isMenuOpen, setIsMenuOpen] = useState(false)
-
-  return (
-    <header className="w-full bg-white border-b border-zinc-200 shadow-sm">
-      <div className="max-w-[1200px] mx-auto px-4 h-16 flex items-center justify-between">
-        <div className="flex items-center gap-8">
-          <h1 className="text-2xl font-semibold tracking-tight">Cooking Circle</h1>
-          <nav className="hidden md:flex gap-6">
-            <a href="#" className="text-sm font-medium hover:text-zinc-600 transition-colors">
-              Explore
-            </a>
-            <a href="#" className="text-sm font-medium hover:text-zinc-600 transition-colors">
-              My Recipes
-            </a>
-            <a href="#" className="text-sm font-medium hover:text-zinc-600 transition-colors">
-              Favorites
-            </a>
-            <a href="#" className="text-sm font-medium hover:text-zinc-600 transition-colors">
-              Shop
-            </a>
-          </nav>
-        </div>
-        <div className="flex items-center gap-4">
-          <NewRecipeButton />
-          <Button variant="default" size="sm">
-            <LogIn className="h-4 w-4 mr-2" />
-            Login
-          </Button>
-          <Button variant="ghost" size="icon" className="relative" href="/shopping-list">
-            <ShoppingCart className="h-5 w-5" />
-            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center">
-              3
-            </span>
-          </Button>
-          <Button variant="ghost" size="icon" className="relative">
-            <Bell className="h-5 w-5" />
-            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center">
-              2
-            </span>
-          </Button>
-          <div className="flex items-center gap-2">
-            <Sheet>
-              <SheetTrigger asChild>
-                <button
-                  className="w-10 h-10 rounded-md bg-gray-200 flex items-center justify-center hover:bg-gray-300 transition-colors md:hidden"
-                  aria-label="Menu"
-                >
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M4 18L20 18" stroke="#000000" strokeWidth="2" strokeLinecap="round" />
-                    <path d="M4 12L20 12" stroke="#000000" strokeWidth="2" strokeLinecap="round" />
-                    <path d="M4 6L20 6" stroke="#000000" strokeWidth="2" strokeLinecap="round" />
-                  </svg>
-                </button>
-              </SheetTrigger>
-              <SheetContent side="right" className="sm:max-w-xs">
-                <SheetHeader>
-                  <SheetTitle>Menu</SheetTitle>
-                  <SheetDescription>Explore more options.</SheetDescription>
-                </SheetHeader>
-                <div className="grid gap-4 py-4">
-                  <a href="#" className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 block">
-                    My Recipes
-                  </a>
-                  <a href="#" className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 block">
-                    Favorites
-                  </a>
-                  <a href="#" className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 block">
-                    Shop
-                  </a>
-                </div>
-                <SheetFooter>
-                  <SheetClose asChild>
-                    <button className="px-4 py-2 bg-black text-white text-sm font-medium rounded-md hover:bg-gray-800 transition-colors">
-                      Close
-                    </button>
-                  </SheetClose>
-                </SheetFooter>
-              </SheetContent>
-            </Sheet>
-            <div className="relative hidden md:block">
-              <button
-                className="w-10 h-10 rounded-md bg-gray-200 flex items-center justify-center hover:bg-gray-300 transition-colors"
-                aria-label="Menu"
-                aria-expanded={isMenuOpen}
-                onClick={() => setIsMenuOpen(!isMenuOpen)}
-              >
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M4 18L20 18" stroke="#000000" strokeWidth="2" strokeLinecap="round" />
-                  <path d="M4 12L20 12" stroke="#000000" strokeWidth="2" strokeLinecap="round" />
-                  <path d="M4 6L20 6" stroke="#000000" strokeWidth="2" strokeLinecap="round" />
-                </svg>
-              </button>
-              {isMenuOpen && (
-                <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 border border-gray-200 z-50">
-                  <a href="#" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                    My Recipes
-                  </a>
-                  <a href="#" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                    Favorites
-                  </a>
-                  <a href="#" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                    Shop
-                  </a>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    </header>
-  )
-}
-*/
 export default function Home() {
+  const [recipes, setRecipes] = useState<Recipe[]>([]) 
+  const [trendingRecipes, setTrendingRecipes] = useState<Recipe[]>([])
+  const [recommendedIngredients, setRecommendedIngredients] = useState<Ingredient[]>([])
+  const [kitchenware, setKitchenware] = useState<Product[]>([])
   const [activeFilter, setActiveFilter] = useState("All")
   const [searchQuery, setSearchQuery] = useState("")
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
 
+  useEffect(() => {
+    async function fetchRecipes() {
+      const { data, error } = await supabase.from("recipes")
+      .select("*")
+      .order("likes_count", { ascending: false })
+      .limit(4)
+
+      if (error) {
+        console.error("Supabase fetch error:", error)
+      } else {
+        console.log(" Supabase fetch success! Data:", data)
+        setRecipes(data)
+      }
+    }
+
+    async function fetchTrending() {
+      const { data, error } = await supabase
+        .from("recipes")
+        .select("*")
+        .order("views_count", { ascending: false })
+        .limit(4)
+
+      if (!error && data) {
+        setTrendingRecipes(data)
+      }
+    }
+
+    async function fetchIngredients() {
+      const { data, error } = await supabase
+        .from("ingredients")
+        .select("ingredient_id, name, ingredient_image_url, ingredient_description")
+        .limit(50)
+    
+      if (!error && data) {
+        const transformed = data.map((item) => ({
+          id: item.ingredient_id,
+          name: item.name,
+          ingredient_image_url: item.ingredient_image_url,
+          ingredient_description: item.ingredient_description,
+        }))
+        const shuffled = transformed.sort(() => 0.5 - Math.random())
+        setRecommendedIngredients(shuffled.slice(0, 4))
+      }
+    }
+    
+    async function fetchKitchenware() {
+      const { data, error } = await supabase
+        .from("products")
+        .select("*")
+        .limit(50)
+    
+      if (!error && data) {
+        const shuffled = data.sort(() => 0.5 - Math.random())
+        setKitchenware(shuffled.slice(0, 4))
+      } else {
+        console.error("Failed to fetch kitchenware:", error)
+      }
+    }
+    
+    fetchRecipes()
+    fetchTrending()
+    fetchIngredients()
+    fetchKitchenware()
+  }, [])
+  
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (
@@ -439,20 +250,14 @@ export default function Home() {
     setActiveFilter(filter)
   }
 
-  /* 
-  const handleSearch = (query: string) => {
-    setSearchQuery(query)
-  }
-  */
-
-  const router = useRouter(); // ✅ Next.js 라우터 사용
+  const router = useRouter(); 
 
 const handleSearch = (query: string) => {
   if (query.trim() === "") { 
-    alert("검색어를 입력해주세요!"); // ✅ 빈 검색어 입력 시 알림
-    return; // ✅ 함수 종료 (이동하지 않음)
+    alert("Please insert text!"); 
+    return; 
   }
-  router.push(`/search?query=${encodeURIComponent(query)}`); // ✅ 검색 결과 페이지로 이동
+  router.push(`/search?query=${encodeURIComponent(query)}`);
 };
 
   const handleViewAll = (section: string) => {
@@ -553,9 +358,18 @@ const handleSearch = (query: string) => {
               </a>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
-              {popularRecipes.map((recipe) => (
-                <RecipeCard key={recipe.id} {...recipe} />
-              ))}
+            {recipes.map((recipe) => (
+            <RecipeCard
+              key={recipe.recipe_id}
+              id={recipe.recipe_id}
+              title={recipe.title}
+              image={recipe.image_url}
+              description={recipe.description}
+              tags={recipe.tags}
+              likes={recipe.likes_count}
+              views={recipe.views_count}
+            />
+          ))}
             </div>
           </section>
 
@@ -568,7 +382,16 @@ const handleSearch = (query: string) => {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
               {trendingRecipes.map((recipe) => (
-                <RecipeCard key={recipe.id} {...recipe} />
+                <RecipeCard
+                key={recipe.recipe_id}
+                id={recipe.recipe_id}
+                title={recipe.title}
+                image={recipe.image_url}
+                description={recipe.description}
+                tags={recipe.tags}
+                likes={recipe.likes_count}
+                views={recipe.views_count}
+              />
               ))}
             </div>
           </section>
@@ -589,14 +412,17 @@ const handleSearch = (query: string) => {
                 {recommendedIngredients.map((product) => (
                   <ProductCard
                     key={product.id}
-                    {...product}
-                    onAddToCart={() => {
-                      console.log("Adding to cart:", product.name)
-                    }}
+                    name={product.name}
+                    image={product.ingredient_image_url || "/Ingredients_Image/default.jpg"}
+                    description={product.ingredient_description || "Handpicked high-quality ingredient"}
+                    rating={4.8}
+                    purchases={Math.floor(Math.random() * 1000) + 100}
+                    price="$9.99"
+                    onAddToCart={() => console.log("Added to cart:", product.name)}
                   />
                 ))}
+                </div>
               </div>
-            </div>
 
             {/* Kitchenware Section */}
             <div className="mb-12">
@@ -607,15 +433,18 @@ const handleSearch = (query: string) => {
                 </a>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                {recommendedKitchenware.map((product) => (
-                  <ProductCard
-                    key={product.id}
-                    {...product}
-                    onAddToCart={() => {
-                      console.log("Adding to cart:", product.name)
-                    }}
-                  />
-                ))}
+              {kitchenware.map((item) => (
+                <ProductCard
+                    key={item.product_id}
+                    name={item.name}
+                    image={item.image_url || "/Kitchenware_Image/default.jpg"}
+                    description={item.description}
+                    rating={item.rating}
+                    purchases={item.purchases}
+                    price={`$${item.price}`}
+                    onAddToCart={() => console.log("Add to cart:", item.name)}
+                />
+              ))}
               </div>
             </div>
           </section>
