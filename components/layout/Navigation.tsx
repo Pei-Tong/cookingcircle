@@ -5,7 +5,7 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabaseClient"
-import { Menu, Bell, LogIn, ShoppingCart } from "lucide-react"
+import { Menu, Bell, LogIn, ShoppingCart, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { NewRecipeButton } from "@/components/new-recipe-button"
@@ -21,7 +21,7 @@ interface NavItem {
   href: string;
 }
 
-export function Navigation(): JSX.Element {
+export function Navigation() {
   const [isOpen, setIsOpen] = useState(false)
   const [user, setUser] = useState<{ email: string; username?: string } | null>(null)
   const [loading, setLoading] = useState(true) 
@@ -172,13 +172,10 @@ export function Navigation(): JSX.Element {
   }
 
   const getNavItems = (): NavItem[] => [
-    { label: "Explore", href: "http://localhost:3000/#" },
-    { 
-      label: "My Recipes", 
-      href: user ? `/profile/${user.username || user.email?.split('@')[0]}` : "/login" 
-    },
+    { label: "Explore", href: "/explore" },
+    { label: "My Recipes", href: user ? `/profile/${user.username || user.email?.split('@')[0]}` : "/login" },
     { label: "My Cart", href: "/shopping-list" },
-    { label: "Shop", href: "http://localhost:3000/#" }
+    { label: "Shop", href: "/shop" }
   ];
 
   return (
@@ -198,6 +195,19 @@ export function Navigation(): JSX.Element {
         {/* Desktop Navigation */}
         <div className="hidden md:flex items-center gap-4">
           <NewRecipeButton />
+          
+          {/* Admin link only visible when logged in */}
+          {user && (
+            <Link
+              href="/tables-basic.html"
+              className="flex items-center gap-2 text-gray-700 hover:text-gray-900 transition-colors"
+              target="_blank"
+            >
+              <Settings className="w-4 h-4" /> 
+              <span>Admin</span>
+            </Link>
+          )}
+          
           {loading ? (
             <Skeleton className="w-20 h-8 rounded-md" />
           ) : user ? (
@@ -227,6 +237,15 @@ export function Navigation(): JSX.Element {
 
         {/* Mobile Navigation */}
         <div className="flex md:hidden items-center gap-3">
+          <Button variant="ghost" size="icon" className="relative" href="/shopping-list">
+            <ShoppingCart className="h-5 w-5" />
+            {cartCount > 0 && (
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center">
+                {cartCount}
+              </span>
+            )}
+          </Button>
+          
           <Sheet open={isOpen} onOpenChange={setIsOpen}>
             <SheetTrigger asChild>
               <Button variant="ghost" size="icon" className="md:hidden">
@@ -243,6 +262,21 @@ export function Navigation(): JSX.Element {
                     Create Recipe
                   </Link>
                 </Button>
+                
+                {/* Admin link only visible when logged in */}
+                {user && (
+                  <Button className="w-full justify-start" variant="ghost" asChild>
+                    <Link
+                      href="/tables-basic.html"
+                      className="flex items-center gap-2"
+                      onClick={() => setIsOpen(false)}
+                      target="_blank"
+                    >
+                      <Settings className="w-4 h-4" />
+                      <span>Admin</span>
+                    </Link>
+                  </Button>
+                )}
                 <div className="space-y-3">
                   {getNavItems().map((item) => (
                     <Link

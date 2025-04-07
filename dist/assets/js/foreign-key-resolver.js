@@ -1,0 +1,5 @@
+class ForeignKeyResolver{constructor(){this.cache={},this.resolvers={recipe_id:this.resolveRecipe.bind(this)}}async resolve(e,r){if(!r)return"N/A";if(this.resolvers[e])return this.resolvers[e](r);for(const s of Object.keys(this.resolvers))if(e.endsWith(s))return this.resolvers[s](r);return r}async resolveRecipe(r){if(this.cache["recipe_"+r])return this.cache["recipe_"+r];try{var{data:e,error:s}=await supabase.from("recipes").select("title").eq("recipe_id",r).single();if(s)throw s;var i=`
+        <span title="ID: ${r}" class="cursor-help border-b border-dotted border-gray-400">
+          ${e?.title||"Unknown Recipe"}
+        </span>
+      `;return this.cache["recipe_"+r]=i}catch(e){return console.error(`Error resolving recipe ID ${r}:`,e),`Recipe #${r.substring(0,8)}...`}}clearCache(){this.cache={}}}const foreignKeyResolver=new ForeignKeyResolver;

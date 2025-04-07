@@ -1,8 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabaseClient"
 import { Mail, Github } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -26,6 +26,25 @@ export default function LoginPage() {
   const [error, setError] = useState("")
   const [rememberMe, setRememberMe] = useState(false)
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const redirectTo = searchParams?.get("redirectTo") || "/"
+  
+  console.log("[LoginPage] Initial render with redirectTo:", redirectTo)
+
+  // 檢查用戶是否已登入
+  useEffect(() => {
+    console.log("[LoginPage] useEffect running, checking user session")
+    async function checkUser() {
+      const { data } = await supabase.auth.getSession()
+      console.log("[LoginPage] Auth session check result:", data.session ? "Logged in" : "Not logged in")
+      if (data.session) {
+        const decodedRedirectTo = decodeURIComponent(redirectTo)
+        console.log("[LoginPage] User already logged in, redirecting to:", decodedRedirectTo)
+        router.push(decodedRedirectTo)
+      }
+    }
+    checkUser()
+  }, [redirectTo, router])
 
   const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -34,24 +53,63 @@ export default function LoginPage() {
 
     const email = (event.currentTarget as any).email.value
     const password = (event.currentTarget as any).password.value
+    
+    console.log("[LoginPage] Attempting login for user:", email)
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
 
-    if (error) {
-      setError("Invalid email or password")
-    } else {
-      router.push("/")
+      if (error) {
+        console.error("[LoginPage] Login error:", error.message)
+        setError("Invalid email or password")
+        setIsLoading(false)
+        return
+      }
+
+      if (data.session) {
+        const decodedRedirectTo = decodeURIComponent(redirectTo)
+        console.log("[LoginPage] Login successful, redirecting to:", decodedRedirectTo)
+        
+        // 直接使用 window.location 進行重定向，避免 Next.js router 的潛在問題
+        window.location.href = decodedRedirectTo
+      }
+    } catch (err) {
+      console.error("[LoginPage] Login exception:", err)
+      setError("An error occurred during login. Please try again.")
+      setIsLoading(false)
     }
-
-    setIsLoading(false)
   }
 
   const handleOAuthLogin = async (provider: "google" | "github" | "discord") => {
-    const { error } = await supabase.auth.signInWithOAuth({ provider })
-    if (error) console.error(`${provider} login error:`, error.message)
+    try {
+      setIsLoading(true)
+      
+      const origin = window.location.origin
+      console.log("[LoginPage] OAuth login with provider:", provider, "redirectTo:", redirectTo)
+      
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: `${origin}/auth/callback?redirectTo=${encodeURIComponent(redirectTo)}`
+        }
+      })
+
+      if (error) throw error
+      
+      if (data?.url) {
+        console.log(`[LoginPage] Redirecting to ${provider} OAuth URL:`, data.url)
+        window.location.href = data.url
+      } else {
+        throw new Error(`Could not get ${provider} login URL`)
+      }
+    } catch (err: any) {
+      console.error(`[LoginPage] ${provider} OAuth error:`, err)
+      setError(`Error signing in with ${provider}`)
+      setIsLoading(false)
+    }
   }
 
   return (
@@ -74,7 +132,7 @@ export default function LoginPage() {
               </div>
               <div className="mt-auto text-white text-lg">
                 <p>
-                  “Join our community of food lovers and discover amazing recipes from around the world.”
+                  "Join our community of food lovers and discover amazing recipes from around the world."
                 </p>
               </div>
             </div>
@@ -133,6 +191,7 @@ export default function LoginPage() {
                       variant="outline"
                       className="w-full"
                       onClick={() => handleOAuthLogin("google")}
+                      disabled={isLoading}
                     >
                       <Mail className="mr-2 h-4 w-4" />
                       Google
@@ -141,6 +200,7 @@ export default function LoginPage() {
                       variant="outline"
                       className="w-full"
                       onClick={() => handleOAuthLogin("github")}
+                      disabled={isLoading}
                     >
                       <Github className="mr-2 h-4 w-4" />
                       GitHub
@@ -149,6 +209,7 @@ export default function LoginPage() {
                       variant="outline"
                       className="w-full"
                       onClick={() => handleOAuthLogin("discord")}
+                      disabled={isLoading}
                     >
                       Discord
                     </Button>

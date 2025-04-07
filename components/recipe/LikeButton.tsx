@@ -38,8 +38,11 @@ export function LikeButton({
           .eq('user_id', userId)
           .single()
         
-        if (error && error.code !== 'PGRST116') {
-          console.error('Error checking like status:', error)
+        if (error) {
+          if (error.code !== 'PGRST116') {
+            console.error('Error checking like status:', error)
+          }
+          // 不要因為 API 錯誤而中斷用戶體驗
           return
         }
         
@@ -97,7 +100,10 @@ export function LikeButton({
           .eq('recipe_id', recipeId)
           .eq('user_id', userId)
         
-        if (error) throw error
+        if (error) {
+          console.error('Error removing like:', error)
+          throw error
+        }
         
         setIsLiked(false)
         setLikesCount(prev => Math.max(0, prev - 1))
@@ -110,7 +116,10 @@ export function LikeButton({
             user_id: userId
           })
         
-        if (error) throw error
+        if (error) {
+          console.error('Error adding like:', error)
+          throw error
+        }
         
         setIsLiked(true)
         setLikesCount(prev => prev + 1)
