@@ -7,7 +7,29 @@ class DynamicTableRenderer{constructor(){this.tableConfigs=tableConfigurations||
                       </div>
                     </div>
                   </div>
-                `,document.body.appendChild(l),setTimeout(()=>{window.location.reload()},800)}else d&&(d.style.opacity="1"),alert("Failed to delete the item. Please try again.")}catch(e){console.error("Error during deletion:",e),alert("An error occurred while deleting the item.")}break;case"edit":try{var s=`edit${t.charAt(0).toUpperCase()+t.slice(1).replace(/s$/,"")}Detail`;"function"==typeof window[s]?await window[s](r):await this.showGenericEditModal(n.tableName,n.idField,r,n.columns)}catch(e){console.error(`Error editing ${t}:`,e),alert(`Could not edit ${t}. Error: `+e.message)}}}}},!0),document.addEventListener("click",async t=>{if(t.target.closest(".add-item-btn")){t=t.target.closest(".add-item-btn").dataset.tableType;if(t)if("recipes"===t&&"function"==typeof window.addRecipe)window.addRecipe();else if("products"===t&&"function"==typeof window.addProduct)window.addProduct();else{var e=this.tableConfigs[t];if(e)try{await this.showGenericAddModal(e.tableName,e.idField,e.columns)}catch(e){console.error(`Error adding to ${t}:`,e),alert("Could not open add form: "+e.message)}}}}))}async fetchItems(t,r=null){try{let e=supabase.from(t).select("*");var{data:a,error:o}=await(e=r?e.order(r.column,{ascending:r.ascending}):e);if(o)throw o;return a}catch(e){return console.error(`Error fetching ${t}:`,e),[]}}async fetchItemById(t,e,r){try{var{data:a,error:o}=await supabase.from(t).select("*").eq(e,r).single();if(o)throw o;return a}catch(e){return console.error(`Error fetching item from ${t}:`,e),null}}async deleteItem(t,e,r){try{var a=(await supabase.from(t).delete().eq(e,r))["error"];if(a)throw a;return!0}catch(e){return console.error(`Error deleting item from ${t}:`,e),!1}}async insertItem(t,e){try{var r=(await supabase.from(t).insert(e))["error"];if(r)throw r;return!0}catch(e){return console.error(`Error inserting item into ${t}:`,e),!1}}async renderTable(e,t){e.classList.remove("overflow-auto"),e.classList.add("overflow-auto");const r=e.closest(".card")?.querySelector(".card-header");if(r&&!r.querySelector(".add-item-btn")){const l=document.createElement("button");l.className="add-item-btn py-1 px-3 inline-flex items-center gap-1 text-sm font-medium bg-primary text-white rounded-md ml-auto",l.innerHTML=`
+                `,document.body.appendChild(l),setTimeout(()=>{window.location.reload()},800)}else d&&(d.style.opacity="1"),alert("Failed to delete the item. Please try again.")}catch(e){console.error("Error during deletion:",e),alert("An error occurred while deleting the item.")}break;case"edit":try{var s=`edit${t.charAt(0).toUpperCase()+t.slice(1).replace(/s$/,"")}Detail`;"function"==typeof window[s]?await window[s](r):await this.showGenericEditModal(n.tableName,n.idField,r,n.columns)}catch(e){console.error(`Error editing ${t}:`,e),alert(`Could not edit ${t}. Error: `+e.message)}}}}},!0),document.addEventListener("click",async t=>{if(t.target.closest(".add-item-btn")){t=t.target.closest(".add-item-btn").dataset.tableType;if(t)if("recipes"===t&&"function"==typeof window.addRecipe)window.addRecipe();else if("products"===t&&"function"==typeof window.addProduct)window.addProduct();else{var e=this.tableConfigs[t];if(e)try{await this.showGenericAddModal(e.tableName,e.idField,e.columns)}catch(e){console.error(`Error adding to ${t}:`,e),alert("Could not open add form: "+e.message)}}}}))}async fetchItems(t,r=null){try{let e=supabase.from(t).select("*");var{data:a,error:o}=await(e=r?e.order(r.column,{ascending:r.ascending}):e);if(o)throw o;return a}catch(e){return console.error(`Error fetching ${t}:`,e),[]}}async fetchItemById(t,e,r){try{var{data:a,error:o}=await supabase.from(t).select("*").eq(e,r).single();if(o)throw o;return a}catch(e){return console.error(`Error fetching item from ${t}:`,e),null}}async deleteItem(t, e, r) {
+    try {
+      // Special handling for recipes table
+      if (t === "recipes") {
+        // Use the enhanced deleteRecipe function for recipes
+        if (typeof deleteRecipe === "function") {
+          const success = await deleteRecipe(r);
+          if (!success) {
+            throw new Error("Failed to delete recipe and its related data");
+          }
+          return true;
+        }
+      }
+      
+      // For all other tables, use the standard delete approach
+      var a = (await supabase.from(t).delete().eq(e, r))["error"];
+      if (a) throw a;
+      return true;
+    } catch (e) {
+      console.error(`Error deleting item from ${t}:`, e);
+      return false;
+    }
+  }async insertItem(t,e){try{var r=(await supabase.from(t).insert(e))["error"];if(r)throw r;return!0}catch(e){return console.error(`Error inserting item into ${t}:`,e),!1}}async renderTable(e,t){e.classList.remove("overflow-auto"),e.classList.add("overflow-auto");const r=e.closest(".card")?.querySelector(".card-header");if(r&&!r.querySelector(".add-item-btn")){const l=document.createElement("button");l.className="add-item-btn py-1 px-3 inline-flex items-center gap-1 text-sm font-medium bg-primary text-white rounded-md ml-auto",l.innerHTML=`
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-plus">
             <line x1="12" y1="5" x2="12" y2="19"></line>
             <line x1="5" y1="12" x2="19" y2="12"></line>
