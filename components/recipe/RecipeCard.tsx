@@ -258,27 +258,42 @@ export function RecipeCard({
   };
 
   return (
-    <Card className="overflow-hidden h-full transition-all duration-200 hover:shadow-md border border-gray-300" onClick={handleViewRecipe}>
-      <div className="relative aspect-video overflow-hidden group">
-        <Image src={image || "/placeholder.svg"} alt={title} fill className="object-cover" />
-        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-          <div className="p-4 h-full flex flex-col justify-center relative">
-            <Button
-              variant="secondary"
-              size="icon"
-              className={`absolute top-2 right-2 bg-white hover:bg-white/90 border-gray-300 ${isCollected ? 'text-blue-500' : ''}`}
-              onClick={handleAddToCollection}
-            >
-              <Bookmark className={`h-4 w-4 ${isCollected ? 'fill-current' : ''}`} />
-              <span className="sr-only">Save recipe</span>
-            </Button>
-            <p className="text-white text-sm line-clamp-4 text-center">{description}</p>
+    <Card className="h-full flex flex-col overflow-hidden shadow-md hover:shadow-xl transition-shadow duration-300">
+      <Link href={`/recipes/${id}`} onClick={handleViewRecipe}>
+        <div className="aspect-video relative overflow-hidden rounded-t-lg group">
+          <Image 
+            src={image || '/placeholder.jpg'} 
+            alt={title || "Recipe Image"}
+            fill 
+            className="object-cover"
+            loading="lazy"
+            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+            onError={(e) => {
+              // When image fails to load, replace with placeholder
+              const target = e.target as HTMLImageElement;
+              target.onerror = null; // Prevent infinite error loop
+              target.src = '/placeholder.jpg';
+              console.log(`Image load error for recipe: ${id}, falling back to placeholder`);
+            }}
+          />
+          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+            <div className="p-4 h-full flex flex-col justify-center relative">
+              <Button
+                variant="secondary"
+                size="icon"
+                className={`absolute top-2 right-2 bg-white hover:bg-white/90 border-gray-300 ${isCollected ? 'text-blue-500' : ''}`}
+                onClick={handleAddToCollection}
+              >
+                <Bookmark className={`h-4 w-4 ${isCollected ? 'fill-current' : ''}`} />
+                <span className="sr-only">Save recipe</span>
+              </Button>
+              <p className="text-white text-sm line-clamp-4 text-center">{description}</p>
+            </div>
           </div>
         </div>
-      </div>
+      </Link>
       <CardContent className="p-4">
         <h3 className="font-semibold text-lg tracking-tight mb-2 line-clamp-1">{title}</h3>
-        <p className="text-sm text-gray-600 mb-3 line-clamp-2">{description}</p>
         <div className="flex flex-wrap gap-2 mb-2">
           {tags.map((tag) => (
             <Badge key={tag} variant="default" className="text-xs font-medium bg-black text-white">

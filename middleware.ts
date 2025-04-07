@@ -44,6 +44,8 @@ export async function middleware(request: NextRequest) {
   // Allow static assets to be served directly
   if (
     pathname.startsWith('/assets/') || 
+    pathname.startsWith('/_next/') ||
+    pathname.startsWith('/Footer_Image/') ||
     pathname.endsWith('.html') || 
     pathname.endsWith('.js') || 
     pathname.endsWith('.css') || 
