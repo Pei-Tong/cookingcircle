@@ -108,6 +108,11 @@ export default function CreateRecipe() {
       try {
         console.log("Checking authentication status...");
         
+        // Get all cookies to help debug
+        document.cookie.split(';').forEach(cookie => {
+          console.log("Cookie:", cookie.trim());
+        });
+        
         // Simple session check - similar to other components
         const { data, error } = await supabase.auth.getSession();
         
@@ -131,24 +136,47 @@ export default function CreateRecipe() {
             error: null
           });
         } else {
-          console.log("No active session found");
+          console.log("No active session found, trying to refresh session...");
           
-          // Automatically set authenticated to true to bypass UI restrictions
-          setAuthStatus({
-            loading: false,
-            authenticated: true,
-            user: { id: 'temp-user-' + Date.now() },
-            error: null
-          });
+          // Try to refresh the session
+          const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+          
+          if (refreshError) {
+            console.error("Error refreshing session:", refreshError);
+            setAuthStatus({
+              loading: false,
+              authenticated: false,
+              user: null,
+              error: refreshError.message
+            });
+            return;
+          }
+          
+          if (refreshData.session) {
+            console.log("Session refreshed successfully with user ID:", refreshData.session.user.id);
+            setAuthStatus({
+              loading: false,
+              authenticated: true,
+              user: refreshData.session.user,
+              error: null
+            });
+          } else {
+            console.log("No session after refresh, user is not authenticated");
+            setAuthStatus({
+              loading: false,
+              authenticated: false,
+              user: null,
+              error: null
+            });
+          }
         }
       } catch (error) {
         console.error("Error checking auth:", error);
-        // Set authenticated to true anyway to allow form usage
         setAuthStatus({
           loading: false,
-          authenticated: true,
-          user: { id: 'temp-user-' + Date.now() },
-          error: null
+          authenticated: false,
+          user: null,
+          error: error instanceof Error ? error.message : "Unknown error"
         });
       }
     }
@@ -160,7 +188,9 @@ export default function CreateRecipe() {
   const forceLogin = async () => {
     try {
       // Redirect to login page with return URL
-      router.push('/login?redirectTo=' + encodeURIComponent('/create-recipe'));
+      const currentPath = encodeURIComponent('/create-recipe');
+      console.log(`Redirecting to login with return URL: ${currentPath}`);
+      router.push(`/login?redirectTo=${currentPath}`);
     } catch (error) {
       console.error("Error during force login:", error);
       alert("Failed to redirect to login page. Please try again.");
@@ -242,10 +272,12 @@ export default function CreateRecipe() {
 
   // On publish, save to Supabase
   const handlePublish = async () => {
-    // Check if user exists in state, use temp user if needed
-    if (!authStatus.user) {
-      console.log("No user found, creating temporary user");
-      authStatus.user = { id: 'temp-user-' + Date.now() };
+    // Check if user is authenticated before proceeding
+    if (!authStatus.authenticated) {
+      console.log("User not authenticated, redirecting to login");
+      alert("Please log in to publish your recipe");
+      forceLogin();
+      return;
     }
 
     // Helper function to parse string to number or null
@@ -266,25 +298,53 @@ export default function CreateRecipe() {
       // First, upload images to Supabase Storage and get the first image URL
       let image_url = null;
       if (images.length > 0) {
+        console.log("Uploading image...");
         const file = images[0];
-        const fileExt = file.name.split('.').pop();
-        const fileName = `${Math.random()}.${fileExt}`;
+        const fileExt = file.name.split('.').pop() || 'jpg';
+        const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
         const filePath = `recipe-images/${fileName}`;
 
-        const { error: uploadError } = await supabase.storage
-          .from('recipe-images')
-          .upload(filePath, file);
+        // Log the image information
+        console.log(`Uploading image: ${file.name} (${file.size} bytes) to ${filePath}`);
 
-        if (uploadError) throw uploadError;
+        try {
+          const { error: uploadError, data: uploadData } = await supabase.storage
+            .from('recipe-images')
+            .upload(filePath, file, {
+              cacheControl: '3600',
+              upsert: false
+            });
 
-        const { data: urlData } = supabase.storage
-          .from('recipe-images')
-          .getPublicUrl(filePath);
-        image_url = urlData?.publicUrl ?? null;
+          if (uploadError) {
+            console.error("Error uploading image:", uploadError);
+            throw new Error(`Image upload failed: ${uploadError.message}`);
+          }
+
+          console.log("Image uploaded successfully:", uploadData);
+
+          const { data: urlData } = supabase.storage
+            .from('recipe-images')
+            .getPublicUrl(filePath);
+
+          image_url = urlData?.publicUrl ?? null;
+          console.log("Public image URL:", image_url);
+        } catch (uploadError) {
+          console.error("Error in image upload process:", uploadError);
+          // Continue with recipe creation but with no image
+          alert("Could not upload image, but will continue creating recipe.");
+          image_url = '/placeholder.jpg';
+        }
+      } else {
+        console.log("No images to upload, using placeholder");
+        image_url = '/placeholder.jpg';
       }
 
       // Get current user id
-      const userId = authStatus.user.id;
+      const userId = authStatus.user?.id;
+      
+      if (!userId) {
+        throw new Error("User ID is required to create a recipe");
+      }
       
       // Always use default user ID for database consistency
       const useDefaultUser = userId.toString().startsWith('temp-user-');
@@ -582,16 +642,22 @@ export default function CreateRecipe() {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       {/* Render uploaded image/video previews */}
                       {images.map((file, index) => (
-                        <div key={index} className="relative">
+                        <div key={index} className="relative aspect-video h-40 w-full">
                           <img
                             src={URL.createObjectURL(file)}
                             alt={`Upload Preview ${index}`}
-                            className="object-cover w-full h-40 rounded-lg"
+                            className="object-cover w-full h-full rounded-lg"
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              console.error(`Error loading image preview for ${file.name}`);
+                              target.onerror = null;
+                              target.src = '/placeholder.jpg';
+                            }}
                           />
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="absolute top-1 right-1"
+                            className="absolute top-1 right-1 bg-black/30 hover:bg-black/50 text-white"
                             onClick={() => removeImage(index)}
                           >
                             <Trash2 className="h-4 w-4" />
@@ -600,16 +666,18 @@ export default function CreateRecipe() {
                       ))}
                       {/* Upload box - Add check for element existence */}
                       <div
-                        className="border-2 border-dashed rounded-lg p-4 flex flex-col items-center justify-center text-center h-40 cursor-pointer"
+                        className="border-2 border-dashed rounded-lg p-4 flex flex-col items-center justify-center text-center h-40 cursor-pointer hover:bg-muted/50 transition-colors"
                         onClick={() => document.getElementById("file-input")?.click()}
                       >
                         <Upload className="h-8 w-8 mb-2 text-muted-foreground" />
                         <p className="text-sm text-muted-foreground">Drag & drop or click to upload</p>
+                        <p className="text-xs text-muted-foreground mt-1">JPG, PNG up to 10MB</p>
                         <input
                           id="file-input"
                           type="file"
                           className="hidden"
                           multiple
+                          accept="image/jpeg,image/png,image/jpg"
                           onChange={handleImageUpload}
                         />
                       </div>
