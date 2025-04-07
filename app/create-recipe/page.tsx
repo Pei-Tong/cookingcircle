@@ -3,7 +3,12 @@
 import { useState } from "react";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import { useRouter } from "next/navigation";
+import { Upload, Plus, Trash2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Navigation } from "@/components/layout/Navigation";
+import { Footer } from "@/components/layout/Footer";
 
+// Add missing imports for shadcn/ui components
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,10 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Upload, Plus, Trash2 } from "lucide-react";
-import { Switch } from "@/components/ui/switch";
-import { Navigation } from "@/components/layout/Navigation";
-import { Footer } from "@/components/layout/Footer";
+import React from 'react'; // Import React for event types
 
 // Types for our recipe data
 interface Nutrition {
@@ -72,8 +74,8 @@ export default function CreateRecipe() {
   // Ingredients and instructions as arrays
   const [ingredients, setIngredients] = useState([{ name: "", amount: "", unit: "" }]);
   const [instructions, setInstructions] = useState([""]);
-  // For handling image uploads
-  const [images, setImages] = useState([]);
+  // For handling image uploads - Explicitly type as File[]
+  const [images, setImages] = useState<File[]>([]);
   // States for adding a new tag
   const [isAddingTag, setIsAddingTag] = useState(false);
   const [newTag, setNewTag] = useState("");
@@ -130,10 +132,11 @@ export default function CreateRecipe() {
     setInstructions((prev) => prev.filter((_, i) => i !== index));
   };
 
+  // Correctly type the event handler
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length) {
-      setImages((prev) => [...prev, ...files]);
+      setImages(prevImages => [...prevImages, ...files]);
     }
   };
 
@@ -152,11 +155,25 @@ export default function CreateRecipe() {
 
   // On publish, save to Supabase
   const handlePublish = async () => {
+    // Helper function to parse string to number or null
+    const parseNumberOrNull = (value: string): number | null => {
+      if (value === "") return null;
+      const parsed = parseFloat(value);
+      return isNaN(parsed) ? null : parsed;
+    };
+
+    // Helper function to parse string to integer or null
+    const parseIntOrNull = (value: string): number | null => {
+      if (value === "") return null;
+      const parsed = parseInt(value, 10);
+      return isNaN(parsed) ? null : parsed;
+    };
+
     try {
       // First, upload images to Supabase Storage and get the first image URL
       let image_url = null;
       if (images.length > 0) {
-        const file = images[0]; // Take only the first image
+        const file = images[0];
         const fileExt = file.name.split('.').pop();
         const fileName = `${Math.random()}.${fileExt}`;
         const filePath = `recipe-images/${fileName}`;
@@ -167,17 +184,23 @@ export default function CreateRecipe() {
 
         if (uploadError) throw uploadError;
 
-        const { data: { publicUrl } } = supabase.storage
+        const { data: urlData } = supabase.storage
           .from('recipe-images')
           .getPublicUrl(filePath);
-
-        image_url = publicUrl;
+        image_url = urlData?.publicUrl ?? null;
       }
 
-      // Prepare recipe data (without ingredients and instructions)
-    const recipeData = {
-      ...recipe,
+      // Prepare recipe data with type conversion and correct DB field name 'prep-time'
+      const recipeData = {
+        title: recipe.title,
+        description: recipe.description,
+        "prep-time": parseIntOrNull(recipe["prep-time"]), // Correct DB field name
+        cooking_time: parseIntOrNull(recipe.cooking_time),
+        servings: parseIntOrNull(recipe.servings),
+        difficulty: recipe.difficulty,
+        tags: recipe.tags,
         image_url,
+        user_id: (await supabase.auth.getSession()).data.session?.user?.id ?? null,
         created_at: new Date().toISOString(),
       };
 
@@ -189,15 +212,18 @@ export default function CreateRecipe() {
         .single();
 
       if (insertError) throw insertError;
+      if (!insertedRecipe) throw new Error("Failed to retrieve inserted recipe after insert.");
 
-      // Insert ingredients into the ingredients table
-      if (ingredients.length > 0) {
-        const ingredientsData = ingredients.map(ingredient => ({
-          recipe_id: insertedRecipe.id,
-          name: ingredient.name,
-          quantity: ingredient.amount, // Changed from amount to quantity to match DB schema
-          unit: ingredient.unit
-        }));
+      // Insert ingredients into the ingredients table with type conversion
+      if (ingredients.length > 0 && ingredients.some(ing => ing.name || ing.amount || ing.unit)) {
+        const ingredientsData = ingredients
+          .filter(ing => ing.name || ing.amount || ing.unit)
+          .map(ingredient => ({
+            recipe_id: insertedRecipe.id,
+            name: ingredient.name,
+            quantity: parseNumberOrNull(ingredient.amount),
+            unit: ingredient.unit
+          }));
 
         const { error: ingredientsError } = await supabase
           .from('ingredients')
@@ -207,39 +233,55 @@ export default function CreateRecipe() {
       }
 
       // Insert instructions into the instructions table
-      if (instructions.length > 0) {
-        const instructionsData = instructions.map((description, index) => ({
-          recipe_id: insertedRecipe.id,
-          step_number: index + 1,
-          description
-        }));
+      if (instructions.length > 0 && instructions.some(inst => inst.trim())) {
+        const instructionsData = instructions
+          .filter(inst => inst.trim())
+          .map((description, index) => ({
+            recipe_id: insertedRecipe.id,
+            step_number: index + 1,
+            description
+          }));
 
-        const { error: instructionsError } = await supabase
-          .from('instructions')
-          .insert(instructionsData);
+        if (instructionsData.length > 0) {
+          const { error: instructionsError } = await supabase
+            .from('instructions')
+            .insert(instructionsData);
 
-        if (instructionsError) throw instructionsError;
+          if (instructionsError) throw instructionsError;
+        }
       }
 
-      // If nutrition data is provided, insert it into the recipe_nutrition table
+      // If nutrition data is provided, insert it into the recipe_nutrition table with type conversion
       if (showNutrition && Object.values(nutrition).some(value => value !== "")) {
         const nutritionData = {
           recipe_id: insertedRecipe.id,
-          ...nutrition
+          calories: parseIntOrNull(nutrition.calories),
+          protein: parseNumberOrNull(nutrition.protein),
+          carbohydrates: parseNumberOrNull(nutrition.carbohydrates),
+          fat: parseNumberOrNull(nutrition.fat),
+          fiber: parseNumberOrNull(nutrition.fiber),
+          sugar: parseNumberOrNull(nutrition.sugar)
         };
 
-        const { error: nutritionError } = await supabase
-          .from('recipe_nutrition')
-          .insert([nutritionData]);
+        if (Object.values(nutritionData).some(v => v !== null && v !== insertedRecipe.id)) {
+            const { error: nutritionError } = await supabase
+              .from('recipe_nutrition')
+              .insert([nutritionData]);
 
-        if (nutritionError) throw nutritionError;
+            if (nutritionError) throw nutritionError;
+        }
       }
 
-      // Redirect to the recipes page or show success message
       alert('Recipe added successfully!');
+      router.push(`/recipes/${insertedRecipe.id}`);
+
     } catch (error) {
       console.error('Error publishing recipe:', error);
-      alert('Failed to publish recipe. Please try again.');
+      let errorMessage = 'Failed to publish recipe. Please try again.';
+      if (error instanceof Error) {
+        errorMessage = `Failed to publish recipe: ${error.message}`;
+      }
+      alert(errorMessage);
     }
   };
 
@@ -285,7 +327,7 @@ export default function CreateRecipe() {
                       id="title"
                       placeholder="Enter recipe title"
                       value={recipe.title}
-                      onChange={(e) => handleRecipeChange("title", e.target.value)}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleRecipeChange("title", e.target.value)}
                     />
                   </div>
                   <div className="space-y-2">
@@ -295,7 +337,7 @@ export default function CreateRecipe() {
                       placeholder="Briefly describe your recipe"
                       className="min-h-[100px]"
                       value={recipe.description}
-                      onChange={(e) => handleRecipeChange("description", e.target.value)}
+                      onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => handleRecipeChange("description", e.target.value)}
                     />
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -306,7 +348,7 @@ export default function CreateRecipe() {
                         type="number"
                         placeholder="15"
                         value={recipe["prep-time"]}
-                        onChange={(e) => handleRecipeChange("prep-time", e.target.value)}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleRecipeChange("prep-time", e.target.value)}
                       />
                     </div>
                     <div className="space-y-2">
@@ -316,7 +358,7 @@ export default function CreateRecipe() {
                         type="number"
                         placeholder="30"
                         value={recipe.cooking_time}
-                        onChange={(e) => handleRecipeChange("cooking_time", e.target.value)}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleRecipeChange("cooking_time", e.target.value)}
                       />
                     </div>
                   </div>
@@ -328,14 +370,14 @@ export default function CreateRecipe() {
                         type="number"
                         placeholder="4"
                         value={recipe.servings}
-                        onChange={(e) => handleRecipeChange("servings", e.target.value)}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleRecipeChange("servings", e.target.value)}
                       />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="difficulty">Difficulty</Label>
                       <Select
                         value={recipe.difficulty}
-                        onValueChange={(val) => handleRecipeChange("difficulty", val)}
+                        onValueChange={(val: string) => handleRecipeChange("difficulty", val)}
                       >
                         <SelectTrigger id="difficulty">
                           <SelectValue placeholder="Select difficulty" />
@@ -392,7 +434,7 @@ export default function CreateRecipe() {
                             size="sm"
                             placeholder="New tag"
                             value={newTag}
-                            onChange={(e) => setNewTag(e.target.value)}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewTag(e.target.value)}
                           />
                           <Button size="sm" onClick={handleAddTag}>
                             Save
@@ -441,10 +483,10 @@ export default function CreateRecipe() {
                           </Button>
                         </div>
                       ))}
-                      {/* Upload box */}
+                      {/* Upload box - Add check for element existence */}
                       <div
                         className="border-2 border-dashed rounded-lg p-4 flex flex-col items-center justify-center text-center h-40 cursor-pointer"
-                        onClick={() => document.getElementById("file-input").click()}
+                        onClick={() => document.getElementById("file-input")?.click()}
                       >
                         <Upload className="h-8 w-8 mb-2 text-muted-foreground" />
                         <p className="text-sm text-muted-foreground">Drag & drop or click to upload</p>
@@ -480,7 +522,7 @@ export default function CreateRecipe() {
                             type="number"
                             placeholder="320"
                             value={nutrition.calories}
-                            onChange={(e) => handleNutritionChange("calories", e.target.value)}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleNutritionChange("calories", e.target.value)}
                           />
                         </div>
                         <div className="space-y-2">
@@ -490,7 +532,7 @@ export default function CreateRecipe() {
                             type="number"
                             placeholder="12"
                             value={nutrition.protein}
-                            onChange={(e) => handleNutritionChange("protein", e.target.value)}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleNutritionChange("protein", e.target.value)}
                           />
                         </div>
                         <div className="space-y-2">
@@ -500,7 +542,7 @@ export default function CreateRecipe() {
                             type="number"
                             placeholder="42"
                             value={nutrition.carbohydrates}
-                            onChange={(e) => handleNutritionChange("carbohydrates", e.target.value)}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleNutritionChange("carbohydrates", e.target.value)}
                           />
                         </div>
                         <div className="space-y-2">
@@ -510,7 +552,7 @@ export default function CreateRecipe() {
                             type="number"
                             placeholder="10"
                             value={nutrition.fat}
-                            onChange={(e) => handleNutritionChange("fat", e.target.value)}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleNutritionChange("fat", e.target.value)}
                           />
                         </div>
                         <div className="space-y-2">
@@ -520,7 +562,7 @@ export default function CreateRecipe() {
                             type="number"
                             placeholder="2"
                             value={nutrition.fiber}
-                            onChange={(e) => handleNutritionChange("fiber", e.target.value)}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleNutritionChange("fiber", e.target.value)}
                           />
                         </div>
                         <div className="space-y-2">
@@ -530,7 +572,7 @@ export default function CreateRecipe() {
                             type="number"
                             placeholder="5"
                             value={nutrition.sugar}
-                            onChange={(e) => handleNutritionChange("sugar", e.target.value)}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleNutritionChange("sugar", e.target.value)}
                           />
                         </div>
                       </div>
@@ -558,7 +600,7 @@ export default function CreateRecipe() {
                           <Input
                             placeholder="Ingredient name (e.g., All-purpose flour)"
                             value={ingredient.name}
-                            onChange={(e) =>
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                               handleIngredientChange(index, "name", e.target.value)
                             }
                           />
@@ -566,9 +608,9 @@ export default function CreateRecipe() {
                         <div className="w-24">
                           <Input
                             placeholder="Amount"
-                            type="text"
+                            type="text" // Keep as text input, parsing happens on submit
                             value={ingredient.amount}
-                            onChange={(e) =>
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                               handleIngredientChange(index, "amount", e.target.value)
                             }
                           />
@@ -576,7 +618,7 @@ export default function CreateRecipe() {
                         <div className="w-28">
                           <Select
                             value={ingredient.unit}
-                            onValueChange={(val) => handleIngredientChange(index, "unit", val)}
+                            onValueChange={(val: string) => handleIngredientChange(index, "unit", val)}
                           >
                             <SelectTrigger>
                               <SelectValue placeholder="Unit" />
@@ -634,7 +676,7 @@ export default function CreateRecipe() {
                           placeholder={`Step ${index + 1} instructions`}
                           className="flex-1 min-h-[100px]"
                           value={instruction}
-                          onChange={(e) => handleInstructionChange(index, e.target.value)}
+                          onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => handleInstructionChange(index, e.target.value)}
                         />
                         <Button
                           variant="ghost"

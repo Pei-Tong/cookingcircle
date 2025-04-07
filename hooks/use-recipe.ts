@@ -59,7 +59,9 @@ export function useRecipe(recipeId: string) {
 
   useEffect(() => {
     async function fetchRecipeData() {
-      if (!recipeId) return;
+      if (!recipeId || recipeId === "undefined") {
+        return;
+      }
       
       try {
         setLoading(true);
