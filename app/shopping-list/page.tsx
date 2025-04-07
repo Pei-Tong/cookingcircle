@@ -129,21 +129,56 @@ export default function ShoppingList() {
         }
         
         console.log("Products fetched successfully:", productsData ? productsData.length : 0, "products")
+        console.log("Product IDs in cart:", productIds)
+        console.log("Product details from database:", productsData)
+        
+        // Check for products that could not be found
+        const foundProductIds = productsData ? productsData.map(p => p.product_id) : []
+        const missingProductIds = productIds.filter(id => !foundProductIds.includes(id))
+        
+        if (missingProductIds.length > 0) {
+          console.warn("Could not find details for these products:", missingProductIds)
+        }
+        
+        // Query the ingredients table for any items that might be ingredients instead of products
+        const { data: ingredientsData, error: ingredientsError } = await supabase
+          .from('ingredients')
+          .select('*')
+          .in('ingredient_id', missingProductIds)
+        
+        if (ingredientsError) {
+          console.error("Error fetching ingredient details:", ingredientsError)
+        } else if (ingredientsData && ingredientsData.length > 0) {
+          console.log("Found some items as ingredients:", ingredientsData)
+        }
         
         // Combine cart items with product details
         const combinedCartItems = cartData.map(cartItem => {
-          const productDetails = productsData.find(product => product.product_id === cartItem.product_id) || {
+          // Try to find the product in products table
+          const productDetails = productsData?.find(product => product.product_id === cartItem.product_id)
+          
+          // If not found in products, try to find in ingredients
+          const ingredientDetails = !productDetails && ingredientsData?.find(
+            ingredient => ingredient.ingredient_id === cartItem.product_id
+          )
+          
+          // Create a final product object with fallbacks
+          const finalProduct = {
             product_id: cartItem.product_id,
-            name: "Unknown Product",
-            description: "",
-            price: 0,
-            image_url: "/placeholder.jpg",
-            category: "other"
+            name: productDetails?.name || 
+                 ingredientDetails?.name || 
+                 `Item ${cartItem.product_id.substring(0, 8)}`,
+            description: productDetails?.description || ingredientDetails?.description || "",
+            price: productDetails?.price || 0,
+            image_url: productDetails?.image_url || "/placeholder.jpg",
+            category: productDetails?.category || ingredientDetails?.category || "other",
+            unit: productDetails?.unit || ingredientDetails?.unit || "item",
+            amount: productDetails?.amount || ingredientDetails?.quantity || ""
           }
           
           return {
             ...cartItem,
-            product: productDetails
+            product: finalProduct
           }
         })
         
@@ -594,36 +629,54 @@ export default function ShoppingList() {
                                   className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex gap-2"
                                 >
                                   <div className="flex items-center gap-4 w-full">
-                                    <span className="font-medium w-48">{item.product?.name}</span>
-                                    <span className="text-muted-foreground w-20 text-right">{item.product?.amount || item.quantity}</span>
-                                    <span className="text-muted-foreground w-24">{item.product?.unit || 'item(s)'}</span>
-                                    <span className="text-muted-foreground text-xs">{item.product_type}</span>
+                                    <span className="font-medium w-48 truncate" title={item.product?.name}>
+                                      {item.product?.name || `Item ${item.product_id.slice(0, 6)}`}
+                                    </span>
+                                    <div className="flex items-center space-x-2">
+                                      <span className="text-right w-16 truncate text-gray-600">
+                                        {item.product?.amount || item.quantity}
+                                      </span>
+                                      <span className="w-24 truncate text-gray-600">
+                                        {item.product?.unit || 'item(s)'}
+                                      </span>
+                                      <span className="w-20 text-right font-medium text-green-600">
+                                        ${(item.product?.price || 0).toFixed(2)}
+                                      </span>
+                                    </div>
                                   </div>
                                 </label>
                               </div>
-                              <div className="flex items-center gap-2">
-                                <div className="flex items-center border rounded px-1">
-                                  <Button 
-                                    variant="ghost" 
-                                    size="sm" 
+                              <div className="flex flex-col gap-2 items-center">
+                                <div className="flex items-center gap-2">
+                                  <Button
+                                    variant="outline"
+                                    size="icon"
+                                    className="h-8 w-8"
                                     onClick={() => updateQuantity(item.id, Math.max(1, item.quantity - 1))}
-                                    className="h-8 px-2"
                                   >
                                     <MinusCircle className="h-4 w-4" />
                                   </Button>
-                                  <span className="mx-2">{item.quantity}</span>
-                                  <Button 
-                                    variant="ghost" 
-                                    size="sm" 
+                                  <span className="w-6 text-center">{item.quantity}</span>
+                                  <Button
+                                    variant="outline"
+                                    size="icon"
+                                    className="h-8 w-8"
                                     onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                                    className="h-8 px-2"
                                   >
                                     <PlusCircle className="h-4 w-4" />
                                   </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 text-red-500"
+                                    onClick={() => removeFromCart(item.id)}
+                                  >
+                                    <Trash className="h-4 w-4" />
+                                  </Button>
                                 </div>
-                                <Button variant="ghost" size="sm" onClick={() => removeFromCart(item.id)}>
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
+                                <span className="text-xs text-gray-500">
+                                  Subtotal: ${((item.product?.price || 0) * item.quantity).toFixed(2)}
+                                </span>
                               </div>
                             </div>
                           ))}
@@ -683,29 +736,37 @@ export default function ShoppingList() {
                                         <span className="text-muted-foreground text-xs">({item.product_type})</span>
                                       </label>
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                      <div className="flex items-center border rounded px-1">
-                                        <Button 
-                                          variant="ghost" 
-                                          size="sm" 
+                                    <div className="flex flex-col gap-2 items-center">
+                                      <div className="flex items-center gap-2">
+                                        <Button
+                                          variant="outline"
+                                          size="icon"
+                                          className="h-8 w-8"
                                           onClick={() => updateQuantity(item.id, Math.max(1, item.quantity - 1))}
-                                          className="h-8 px-2"
                                         >
                                           <MinusCircle className="h-4 w-4" />
                                         </Button>
-                                        <span className="mx-2">{item.quantity}</span>
-                                        <Button 
-                                          variant="ghost" 
-                                          size="sm" 
+                                        <span className="w-6 text-center">{item.quantity}</span>
+                                        <Button
+                                          variant="outline"
+                                          size="icon"
+                                          className="h-8 w-8"
                                           onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                                          className="h-8 px-2"
                                         >
                                           <PlusCircle className="h-4 w-4" />
                                         </Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-8 w-8 text-red-500"
+                                          onClick={() => removeFromCart(item.id)}
+                                        >
+                                          <Trash className="h-4 w-4" />
+                                        </Button>
                                       </div>
-                                      <Button variant="ghost" size="sm" onClick={() => removeFromCart(item.id)}>
-                                        <Trash2 className="h-4 w-4" />
-                                      </Button>
+                                      <span className="text-xs text-gray-500">
+                                        Subtotal: ${((item.product?.price || 0) * item.quantity).toFixed(2)}
+                                      </span>
                                     </div>
                                   </div>
                                 ))}
@@ -744,37 +805,28 @@ export default function ShoppingList() {
                 </Tabs>
               )}
               
+              {/* Show total at the bottom of items list */}
               {cartItems.length > 0 && (
-                <Card className="mt-6">
-                  <CardHeader className="pb-3">
-                    <CardTitle>Order Summary</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      <div className="flex justify-between">
-                        <span>Subtotal ({cartItems.reduce((acc, item) => acc + item.quantity, 0)} items)</span>
-                        <span>${calculateTotal().toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between text-muted-foreground">
-                        <span>Shipping</span>
-                        <span>Calculated at checkout</span>
-                      </div>
-                      <div className="flex justify-between text-muted-foreground">
-                        <span>Tax</span>
-                        <span>Calculated at checkout</span>
-                      </div>
-                      <div className="flex justify-between font-bold text-lg pt-2 border-t">
-                        <span>Total</span>
-                        <span>${calculateTotal().toFixed(2)}</span>
-                      </div>
+                <div className="mt-6 pt-4 border-t flex justify-end">
+                  <div className="text-right">
+                    <div className="flex items-center justify-between gap-8">
+                      <span className="text-gray-600">Total items:</span>
+                      <span className="font-medium">{cartItems.length} items</span>
                     </div>
-                  </CardContent>
-                  <CardFooter>
-                    <Button className="w-full">
-                      Proceed to Checkout
-                    </Button>
-                  </CardFooter>
-                </Card>
+                    <div className="flex items-center justify-between gap-8 mt-1">
+                      <span className="text-gray-600">Total quantity:</span>
+                      <span className="font-medium">
+                        {cartItems.reduce((sum, item) => sum + item.quantity, 0)} items
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-8 mt-1">
+                      <span className="text-gray-600">Total amount:</span>
+                      <span className="font-bold text-lg text-green-600">
+                        ${calculateTotal().toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
               )}
             </>
           )}
