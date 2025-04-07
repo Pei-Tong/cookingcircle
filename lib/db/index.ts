@@ -251,7 +251,10 @@ export class SupabaseDatabase implements Database {
       // 如果當前食譜沒有標籤，返回熱門食譜
       const { data, error } = await supabase
         .from("recipes")
-        .select("*")
+        .select(`
+          *,
+          users:user_id (username, profile_image)
+        `)
         .neq("recipe_id", recipeId) // 排除當前食譜
         .order("created_at", { ascending: false })
         .limit(limit);
@@ -264,7 +267,10 @@ export class SupabaseDatabase implements Database {
     // PostgreSQL 可以使用 && 運算符來查找陣列交集
     const { data, error } = await supabase
       .from("recipes")
-      .select("*")
+      .select(`
+        *,
+        users:user_id (username, profile_image)
+      `)
       .neq("recipe_id", recipeId) // 排除當前食譜
       .contains("tags", currentRecipe.tags) // 包含相同標籤的食譜
       .order("created_at", { ascending: false })
@@ -276,7 +282,10 @@ export class SupabaseDatabase implements Database {
     if (data.length < limit) {
       const { data: additionalRecipes, error: addError } = await supabase
         .from("recipes")
-        .select("*")
+        .select(`
+          *,
+          users:user_id (username, profile_image)
+        `)
         .neq("recipe_id", recipeId) // 排除當前食譜
         .not("recipe_id", "in", `(${data.map((r) => r.recipe_id).join(",")})`) // 排除已獲取的食譜
         .order("created_at", { ascending: false })
