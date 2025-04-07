@@ -9,6 +9,12 @@ export async function middleware(request: NextRequest) {
   
   console.log('[Middleware] Processing path:', pathname)
 
+  // Redirect explore to home page
+  if (pathname === '/explore' || pathname === '/shop') {
+    console.log(`[Middleware] Redirecting ${pathname} to homepage`)
+    return NextResponse.redirect(new URL('/', request.url))
+  }
+
   // Allow static assets to be served directly
   if (
     pathname.startsWith('/assets/') || 
@@ -71,9 +77,10 @@ export async function middleware(request: NextRequest) {
 
   // Protected routes - redirect to login if not authenticated
   if (!isAuthenticated && 
-      (pathname.startsWith('/profile') || 
-       pathname.startsWith('/my-recipes') || 
-       pathname.startsWith('/recipe-generator'))) {
+      (pathname.startsWith('/my-recipes') || 
+       pathname.startsWith('/recipe-generator') ||
+       pathname === '/shopping-list' || 
+       pathname === '/create-recipe')) {
     console.log('[Middleware] Protected route accessed by unauthenticated user, redirecting to login')
     const redirectUrl = `/login?redirectTo=${encodeURIComponent(pathname)}`
     console.log('[Middleware] Redirect URL:', redirectUrl)
@@ -86,10 +93,13 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     '/login',
-    '/profile/:path*',
     '/admin',
     '/my-recipes/:path*',
     '/recipe-generator/:path*',
     '/auth/callback',
+    '/explore',
+    '/shopping-list',
+    '/shop',
+    '/create-recipe',
   ],
 } 
