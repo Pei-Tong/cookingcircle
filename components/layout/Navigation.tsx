@@ -1,5 +1,6 @@
 "use client"
 
+import React from 'react'
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -10,7 +11,17 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { NewRecipeButton } from "@/components/new-recipe-button"
 import { Skeleton } from "@/components/ui/skeleton"
 
-export function Navigation() {
+interface AuthChangeEvent {
+  event: string;
+  session: any;
+}
+
+interface NavItem {
+  label: string;
+  href: string;
+}
+
+export function Navigation(): JSX.Element {
   const [isOpen, setIsOpen] = useState(false)
   const [user, setUser] = useState<{ email: string; username?: string } | null>(null)
   const [loading, setLoading] = useState(true) 
@@ -73,7 +84,7 @@ export function Navigation() {
 
     handleAuthChanges();
 
-    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event: string, session: any) => {
       if (event === "SIGNED_IN" && session?.user) {
         handleAuthChanges()
       }
@@ -160,15 +171,15 @@ export function Navigation() {
     window.location.href = '/'
   }
 
-  const getNavItems = () => [
+  const getNavItems = (): NavItem[] => [
     { label: "Explore", href: "http://localhost:3000/#" },
     { 
       label: "My Recipes", 
-      href: user ? `/profile/${user.username || user.email.split('@')[0]}` : "/login" 
+      href: user ? `/profile/${user.username || user.email?.split('@')[0]}` : "/login" 
     },
     { label: "My Cart", href: "/shopping-list" },
-    { label: "Shop", href: "http://localhost:3000/#" },
-  ]
+    { label: "Shop", href: "http://localhost:3000/#" }
+  ];
 
   return (
     <header className="w-full bg-white border-b border-zinc-200 shadow-sm sticky top-0 z-50">
@@ -198,8 +209,8 @@ export function Navigation() {
             </>
           ) : (
             <Link href="/login">
-              <Button variant="default" size="sm">
-                <LogIn className="h-4 w-4 mr-2" />
+              <Button variant="outline" size="sm">
+                <LogIn className="w-4 h-4 mr-2" />
                 Login
               </Button>
             </Link>
@@ -207,12 +218,47 @@ export function Navigation() {
           <Button variant="ghost" size="icon" className="relative" href="/shopping-list">
             <ShoppingCart className="h-5 w-5" />
             {cartCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white w-2 h-2 rounded-full flex items-center justify-center">
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center">
+                {cartCount}
               </span>
             )}
           </Button>
         </div>
 
+        {/* Mobile Navigation */}
+        <div className="flex md:hidden items-center gap-3">
+          <Sheet open={isOpen} onOpenChange={setIsOpen}>
+            <SheetTrigger asChild>
+              <Button variant="ghost" size="icon" className="md:hidden">
+                <Menu className="h-5 w-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left">
+              <SheetHeader>
+                <SheetTitle>Menu</SheetTitle>
+              </SheetHeader>
+              <div className="mt-4 space-y-4">
+                <Button className="w-full justify-start" variant="ghost" asChild>
+                  <Link href="/new-recipe">
+                    Create Recipe
+                  </Link>
+                </Button>
+                <div className="space-y-3">
+                  {getNavItems().map((item) => (
+                    <Link
+                      key={item.label}
+                      href={item.href}
+                      className="block text-sm font-medium hover:text-zinc-600 transition-colors"
+                      onClick={() => setIsOpen(false)}
+                    >
+                      {item.label}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            </SheetContent>
+          </Sheet>
+        </div>
       </div>
     </header>
   )

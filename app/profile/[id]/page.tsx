@@ -1,18 +1,22 @@
 "use client"
 
+import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
+import { getUserProfile, getFollowerCount, getFollowingCount, checkIsFollowing, toggleFollow } from "@/lib/db/profile"
+import type { User, Recipe } from "@/lib/db/types"
+import { getRecipes } from "@/lib/db/recipes"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { RecipeCard } from "@/components/recipe/RecipeCard"
-import { Edit, Settings, Grid, Bookmark, Heart, Loader2 } from "lucide-react"
+import { Edit, Settings, Grid, Bookmark, Heart, Loader2, BadgeCheck } from "lucide-react"
 import { Navigation } from "@/components/layout/Navigation"
 import { Footer } from "@/components/layout/Footer"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { useState, useEffect } from "react"
-import { BadgeCheck } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { supabase } from "@/lib/supabaseClient"
-import { useRouter } from "next/navigation"
 
 interface FilterPillProps {
   label: string
@@ -25,7 +29,9 @@ function FilterPill({ label, active, onClick }: FilterPillProps) {
     <button
       onClick={onClick}
       className={`px-3 py-1.5 rounded-full text-sm transition-colors whitespace-nowrap ${
-        active ? "bg-primary text-primary-foreground" : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
+        active
+          ? "bg-primary text-primary-foreground"
+          : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
       }`}
     >
       {label}
@@ -33,132 +39,235 @@ function FilterPill({ label, active, onClick }: FilterPillProps) {
   )
 }
 
+interface RecipeCardData {
+  id: string
+  title: string
+  description: string
+  image: string
+  tags: string[]
+  likes: number
+  views: number
+  user_id: string
+  username: string
+}
+
+interface RecipeWithUser {
+  recipe_id: string
+  title: string
+  description: string
+  image_url: string
+  tags: string[]
+  likes_count: number
+  views_count: number
+  user_id: string
+  user: {
+    username: string
+  }
+}
+
+interface SavedRecipeData {
+  recipe_id: string
+  recipes: RecipeWithUser
+}
+
+interface LikedRecipeData {
+  recipe_id: string
+  recipes: RecipeWithUser
+}
+
 export default function UserProfile({ params }: { params: { id: string } }) {
-  const router = useRouter();
-  const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState<any>(null);
-  const [currentUser, setCurrentUser] = useState<any>(null);
-  const [userRecipes, setUserRecipes] = useState<any[]>([]);
-  const [savedRecipes, setSavedRecipes] = useState<any[]>([]);
-  const [likedRecipes, setLikedRecipes] = useState<any[]>([]);
-  
-  const [sortOption, setSortOption] = useState("recent");
-  const [activeFilter, setActiveFilter] = useState("All");
+  const router = useRouter()
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [user, setUser] = useState<User | null>(null)
+  const [currentUser, setCurrentUser] = useState<User | null>(null)
+  const [userRecipes, setUserRecipes] = useState<Recipe[]>([])
+  const [savedRecipes, setSavedRecipes] = useState<RecipeCardData[]>([])
+  const [likedRecipes, setLikedRecipes] = useState<RecipeCardData[]>([])
+  const [followerCount, setFollowerCount] = useState<number>(0)
+  const [followingCount, setFollowingCount] = useState<number>(0)
+  const [isFollowing, setIsFollowing] = useState<boolean>(false)
+  const [sortOption, setSortOption] = useState<string>("recent")
+  const [activeFilter, setActiveFilter] = useState("All")
 
   const filterCategories = [
-    "All",
-    "Main Course",
-    "Appetizers",
-    "Desserts",
-    "Vegetarian",
-    "Quick & Easy",
-    "Italian",
-    "Asian",
-    "Baking",
-    "Healthy",
-    "Under 30 mins",
-    "Gluten-Free",
+    "All", "Main Course", "Appetizers", "Desserts", "Vegetarian",
+    "Quick & Easy", "Italian", "Asian", "Baking", "Healthy",
+    "Under 30 mins", "Gluten-Free",
   ]
 
   // Get current user and profile user
   useEffect(() => {
     async function fetchUsers() {
-      setLoading(true);
+      setLoading(true)
+      setError(null)
       
-      // Get current logged in user
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        const { data: currentUserData } = await supabase
-          .from('users')
-          .select('*')
-          .eq('user_id', session.user.id)
-          .single();
-          
-        setCurrentUser(currentUserData);
-      }
-      
-      // Get profile user (from URL parameter)
-      let userData;
-      
-      // First try to find by username
-      const { data: usernameMatch } = await supabase
-        .from('users')
-        .select('*')
-        .eq('username', params.id)
-        .single();
+      try {
+        // Get current logged in user
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.user) {
+          const { data: currentUserData } = await supabase
+            .from('users')
+            .select('*')
+            .eq('user_id', session.user.id)
+            .single()
+            
+          setCurrentUser(currentUserData)
+        }
         
-      if (usernameMatch) {
-        userData = usernameMatch;
-      } else {
-        // If not found by username, try by user_id
-        const { data: userIdMatch } = await supabase
+        // Get profile user (from URL parameter)
+        let userData
+        
+        // First try to find by username
+        const { data: usernameMatch } = await supabase
           .from('users')
           .select('*')
-          .eq('user_id', params.id)
-          .single();
+          .eq('username', decodeURIComponent(params.id))
+          .single()
           
-        userData = userIdMatch;
-      }
-      
-      if (userData) {
-        setUser(userData);
-        fetchUserContent(userData.user_id);
-      } else {
-        console.error("User not found");
-        // Consider redirecting to a 404 page
+        if (usernameMatch) {
+          userData = usernameMatch
+        } else {
+          // If not found by username, try by user_id
+          const { data: userIdMatch } = await supabase
+            .from('users')
+            .select('*')
+            .eq('user_id', params.id)
+            .single()
+            
+          userData = userIdMatch
+        }
+        
+        if (userData) {
+          setUser(userData)
+          await fetchUserContent(userData.user_id)
+          
+          // Fetch follower and following counts
+          const [followers, following] = await Promise.all([
+            getFollowerCount(userData.user_id),
+            getFollowingCount(userData.user_id)
+          ])
+          
+          setFollowerCount(followers)
+          setFollowingCount(following)
+          
+          // Check if current user is following this profile
+          if (currentUser) {
+            const isFollowing = await checkIsFollowing(currentUser.user_id, userData.user_id)
+            setIsFollowing(isFollowing)
+          }
+        } else {
+          setError("User not found")
+        }
+      } catch (err) {
+        console.error("Error fetching user data:", err)
+        setError(err instanceof Error ? err.message : "Failed to load user profile")
+      } finally {
+        setLoading(false)
       }
     }
     
     async function fetchUserContent(userId: string) {
-      // Fetch user's recipes
-      const { data: recipes } = await supabase
-        .from('recipes')
-        .select('*')
-        .eq('user_id', userId);
+      try {
+        // Fetch user's recipes
+        const { data: recipes } = await supabase
+          .from('recipes')
+          .select('*, users!inner(*)')
+          .eq('user_id', userId)
         
-      if (recipes) {
-        setUserRecipes(recipes);
-      }
-      
-      // Fetch saved recipes (from recipe_collections)
-      const { data: saved } = await supabase
-        .from('recipe_collections')
-        .select('recipes(*)')
-        .eq('user_id', userId);
+        if (recipes) {
+          setUserRecipes(recipes)
+        }
         
-      if (saved) {
-        const savedRecipesData = saved.map(item => item.recipes);
-        setSavedRecipes(savedRecipesData.filter(Boolean));
-      }
-      
-      // Fetch liked recipes (from recipe_likes)
-      const { data: liked } = await supabase
-        .from('recipe_likes')
-        .select('recipes(*)')
-        .eq('user_id', userId);
+        // Fetch saved recipes
+        const { data: savedRecipesData } = await supabase
+          .from('recipe_collections')
+          .select(`
+            recipe_id,
+            recipes (
+              recipe_id,
+              title,
+              description,
+              image_url,
+              tags,
+              likes_count,
+              views_count,
+              user_id,
+              user:profiles (
+                username
+              )
+            )
+          `)
+          .eq('user_id', userId) as { data: SavedRecipeData[] | null }
         
-      if (liked) {
-        const likedRecipesData = liked.map(item => item.recipes);
-        setLikedRecipes(likedRecipesData.filter(Boolean));
+        if (savedRecipesData) {
+          const savedRecipes = savedRecipesData.map(item => ({
+            id: item.recipes.recipe_id,
+            title: item.recipes.title,
+            description: item.recipes.description,
+            image: item.recipes.image_url,
+            tags: item.recipes.tags || [],
+            likes: item.recipes.likes_count,
+            views: item.recipes.views_count,
+            user_id: item.recipes.user_id,
+            username: item.recipes.user?.username
+          }))
+          setSavedRecipes(savedRecipes)
+        }
+        
+        // Fetch liked recipes
+        const { data: likedRecipesData } = await supabase
+          .from('recipe_likes')
+          .select(`
+            recipe_id,
+            recipes (
+              recipe_id,
+              title,
+              description,
+              image_url,
+              tags,
+              likes_count,
+              views_count,
+              user_id,
+              user:profiles (
+                username
+              )
+            )
+          `)
+          .eq('user_id', userId) as { data: LikedRecipeData[] | null }
+        
+        if (likedRecipesData) {
+          const likedRecipes = likedRecipesData.map(item => ({
+            id: item.recipes.recipe_id,
+            title: item.recipes.title,
+            description: item.recipes.description,
+            image: item.recipes.image_url,
+            tags: item.recipes.tags || [],
+            likes: item.recipes.likes_count,
+            views: item.recipes.views_count,
+            user_id: item.recipes.user_id,
+            username: item.recipes.user?.username
+          }))
+          setLikedRecipes(likedRecipes)
+        }
+      } catch (err) {
+        console.error("Error fetching user content:", err)
+        setError(err instanceof Error ? err.message : "Failed to load user content")
       }
-      
-      setLoading(false);
     }
     
-    fetchUsers();
-  }, [params.id]);
+    fetchUsers()
+  }, [params.id])
 
-  const sortRecipes = (recipes: any[], option: string) => {
-    const sortedRecipes = [...recipes]
-    switch (option) {
-      case "recent":
-        return sortedRecipes.reverse() // Assuming the array is in chronological order
-      case "likes":
-        return sortedRecipes.sort((a, b) => b.likes - a.likes)
-      case "views":
-        return sortedRecipes.sort((a, b) => b.views - a.views)
-      default:
-        return sortedRecipes
+  const handleFollowToggle = async () => {
+    if (!currentUser || !user) return
+    
+    try {
+      await toggleFollow(currentUser.user_id, user.user_id)
+      setIsFollowing(!isFollowing)
+      setFollowerCount(prev => isFollowing ? prev - 1 : prev + 1)
+    } catch (err) {
+      console.error("Error toggling follow status:", err)
     }
   }
 
@@ -167,64 +276,65 @@ export default function UserProfile({ params }: { params: { id: string } }) {
       <>
         <Navigation />
         <main className="max-w-[1200px] mx-auto px-4 py-6">
-          <div className="flex justify-center items-center h-64">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <span className="ml-2">Loading profile...</span>
+          <div className="flex flex-col gap-8">
+            <Skeleton className="h-48" />
+            <Skeleton className="h-24" />
+            <Skeleton className="h-[400px]" />
           </div>
         </main>
         <Footer />
       </>
-    );
+    )
   }
 
-  // If user not found after loading
+  if (error) {
+    return (
+      <>
+        <Navigation />
+        <main className="max-w-[1200px] mx-auto px-4 py-6">
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        </main>
+        <Footer />
+      </>
+    )
+  }
+
   if (!user) {
     return (
       <>
         <Navigation />
         <main className="max-w-[1200px] mx-auto px-4 py-6">
-          <div className="flex flex-col justify-center items-center h-64">
-            <h1 className="text-2xl font-bold mb-4">User Not Found</h1>
-            <p className="text-muted-foreground mb-4">We couldn't find a user with the profile "{params.id}"</p>
-            <Button onClick={() => router.push('/')}>Return to Home</Button>
-          </div>
+          <Alert>
+            <AlertDescription>User not found</AlertDescription>
+          </Alert>
         </main>
         <Footer />
       </>
-    );
+    )
   }
-
-  // Generate user's initials for avatar fallback
-  const initials = user.username 
-    ? user.username.substring(0, 2).toUpperCase() 
-    : user.email 
-      ? user.email.substring(0, 2).toUpperCase()
-      : "UC"; // UC = User Cooking (default)
 
   return (
     <>
       <Navigation />
       <main className="max-w-[1200px] mx-auto px-4 py-6">
-        <div className="max-w-5xl mx-auto">
-          <div className="flex flex-col md:flex-row gap-6 items-start mb-10">
-            <div className="relative w-32 h-32">
-              <Avatar className="w-32 h-32">
-                <AvatarImage src={user.profile_image || "/placeholder.svg"} alt={user.username || "User"} />
-                <AvatarFallback>{initials}</AvatarFallback>
-              </Avatar>
-            </div>
-
+        <div className="max-w-[800px] mx-auto flex flex-col gap-8">
+          {/* Profile Header */}
+          <div className="flex items-start gap-8">
+            <Avatar className="w-24 h-24">
+              <AvatarImage src={user.profile_image || "/placeholder.svg"} />
+              <AvatarFallback>{user.username?.[0]?.toUpperCase()}</AvatarFallback>
+            </Avatar>
             <div className="flex-1">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-                <div className="flex items-center gap-2">
-                  <h1 className="text-3xl font-bold">{user.username || user.email}</h1>
-                  {user.is_verified && (
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <h1 className="text-2xl font-bold">{user.username}</h1>
+                  {user.bio && (
                     <TooltipProvider>
                       <Tooltip>
-                        <TooltipTrigger asChild>
-                          <div className="inline-flex items-center justify-center rounded-full bg-blue-100 p-1">
-                            <BadgeCheck className="h-5 w-5 text-blue-500" />
-                          </div>
+                        <TooltipTrigger>
+                          <BadgeCheck className="w-5 h-5 text-blue-500" />
                         </TooltipTrigger>
                         <TooltipContent>
                           <p>Verified Chef</p>
@@ -232,65 +342,59 @@ export default function UserProfile({ params }: { params: { id: string } }) {
                       </Tooltip>
                     </TooltipProvider>
                   )}
-                </div>
-                <div className="flex gap-2">
-                  {currentUser && currentUser.user_id !== user.user_id && (
-                    <Button>Follow</Button>
-                  )}
-                  {currentUser && currentUser.user_id === user.user_id && (
-                    <>
-                      <Button variant="outline">
-                        <Edit className="h-4 w-4 mr-2" />
-                        Edit Profile
-                      </Button>
-                      <Button variant="ghost" size="icon">
-                        <Settings className="h-5 w-5" />
-                      </Button>
-                    </>
+                  {currentUser?.user_id !== user.user_id && (
+                    <Button 
+                      variant={isFollowing ? "outline" : "default"}
+                      size="sm"
+                      onClick={handleFollowToggle}
+                    >
+                      {isFollowing ? "Following" : "Follow"}
+                    </Button>
                   )}
                 </div>
+                {currentUser?.user_id === user.user_id && (
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => router.push("/settings/profile")}>
+                      <Edit className="w-4 h-4 mr-2" />
+                      Edit Profile
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => router.push("/settings")}>
+                      <Settings className="w-4 h-4" />
+                    </Button>
+                  </div>
+                )}
               </div>
-
-              <div className="flex gap-6 mb-4">
-                <div className="text-center">
-                  <p className="font-semibold">{userRecipes.length}</p>
-                  <p className="text-sm text-muted-foreground">Recipes</p>
-                </div>
-                <div className="text-center">
-                  <p className="font-semibold">0</p>
-                  <p className="text-sm text-muted-foreground">Followers</p>
-                </div>
-                <div className="text-center">
-                  <p className="font-semibold">0</p>
-                  <p className="text-sm text-muted-foreground">Following</p>
-                </div>
+              <div className="flex items-center gap-6 mb-4">
+                <span className="text-sm text-gray-600">{userRecipes.length} Recipes</span>
+                <span className="text-sm text-gray-600">{followerCount} Followers</span>
+                <span className="text-sm text-gray-600">{followingCount} Following</span>
               </div>
-
-              <p className="text-muted-foreground">
-                {user.bio || "This user hasn't added a bio yet."}
-              </p>
+              {user.bio && (
+                <p className="text-sm text-gray-600 mb-4">{user.bio}</p>
+              )}
             </div>
           </div>
 
-          <Tabs defaultValue="recipes">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="recipes">
-                <Grid className="h-4 w-4 mr-2" />
-                Recipes
-              </TabsTrigger>
-              <TabsTrigger value="saved">
-                <Bookmark className="h-4 w-4 mr-2" />
-                Saved
-              </TabsTrigger>
-              <TabsTrigger value="liked">
-                <Heart className="h-4 w-4 mr-2" />
-                Liked
-              </TabsTrigger>
-            </TabsList>
+          {/* Tabs */}
+          <div className="border-b border-gray-200">
+            <Tabs defaultValue="recipes" className="w-full">
+              <TabsList className="w-full grid grid-cols-3">
+                <TabsTrigger value="recipes" className="flex items-center gap-2">
+                  <Grid className="w-4 h-4" />
+                  Recipes
+                </TabsTrigger>
+                <TabsTrigger value="saved" className="flex items-center gap-2">
+                  <Bookmark className="w-4 h-4" />
+                  Saved
+                </TabsTrigger>
+                <TabsTrigger value="liked" className="flex items-center gap-2">
+                  <Heart className="w-4 h-4" />
+                  Liked
+                </TabsTrigger>
+              </TabsList>
 
-            <TabsContent value="recipes" className="pt-6">
-              {/* Filter Section */}
-              <div className="mb-6">
+              <TabsContent value="recipes" className="pt-6">
+                {/* Temporarily hidden filter section
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-4">
                     <h2 className="text-sm font-medium">Filter Recipes</h2>
@@ -305,105 +409,65 @@ export default function UserProfile({ params }: { params: { id: string } }) {
                       </SelectContent>
                     </Select>
                   </div>
-                  <Button variant="ghost" size="sm" className="text-sm">
-                    Clear Filters
-                  </Button>
+                  <Button variant="ghost" size="sm">Clear Filters</Button>
                 </div>
-                <div className="flex flex-wrap gap-2">
+
+                <div className="flex flex-wrap gap-2 mb-4">
                   {filterCategories.map((filter) => (
                     <FilterPill
                       key={filter}
                       label={filter}
-                      active={filter === "All"}
-                      onClick={() => console.log(`Filter clicked: ${filter}`)}
+                      active={filter === activeFilter}
+                      onClick={() => setActiveFilter(filter)}
                     />
                   ))}
                 </div>
-              </div>
+                */}
 
-              {userRecipes.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-8">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
                   {userRecipes.map((recipe) => (
-                    <RecipeCard
-                      key={recipe.id}
-                      id={recipe.id}
+                    <RecipeCard 
+                      key={recipe.recipe_id}
+                      id={recipe.recipe_id}
                       title={recipe.title}
-                      image={recipe.image || "/placeholder.svg"}
-                      description={recipe.description || ""}
-                      tags={recipe.categories || []}
-                      likes={recipe.likes || 0}
-                      views={recipe.views || 0}
+                      description={recipe.description}
+                      image={recipe.image_url || ''}
+                      tags={recipe.tags || []}
+                      likes={recipe.likes_count}
+                      views={recipe.views_count}
                       user_id={recipe.user_id}
-                      username={user.username || ""}
+                      username={user.username}
                     />
                   ))}
                 </div>
-              ) : (
-                <div className="text-center py-10">
-                  <p className="text-muted-foreground">No recipes yet</p>
-                  {currentUser && currentUser.user_id === user.user_id && (
-                    <Button className="mt-4" onClick={() => router.push('/new-recipe')}>
-                      Create Your First Recipe
-                    </Button>
-                  )}
-                </div>
-              )}
-            </TabsContent>
+              </TabsContent>
 
-            <TabsContent value="saved" className="pt-6">
-              {savedRecipes.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-8">
+              <TabsContent value="saved" className="pt-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
                   {savedRecipes.map((recipe) => (
-                    <RecipeCard
+                    <RecipeCard 
                       key={recipe.id}
-                      id={recipe.id}
-                      title={recipe.title}
-                      image={recipe.image || "/placeholder.svg"}
-                      description={recipe.description || ""}
-                      tags={recipe.categories || []}
-                      likes={recipe.likes || 0}
-                      views={recipe.views || 0}
-                      user_id={recipe.user_id}
-                      username={user.username || ""}
+                      {...recipe}
                     />
                   ))}
                 </div>
-              ) : (
-                <div className="text-center py-10">
-                  <p className="text-muted-foreground">No saved recipes yet</p>
-                </div>
-              )}
-            </TabsContent>
+              </TabsContent>
 
-            <TabsContent value="liked" className="pt-6">
-              {likedRecipes.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-8">
+              <TabsContent value="liked" className="pt-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
                   {likedRecipes.map((recipe) => (
-                    <RecipeCard
+                    <RecipeCard 
                       key={recipe.id}
-                      id={recipe.id}
-                      title={recipe.title}
-                      image={recipe.image || "/placeholder.svg"}
-                      description={recipe.description || ""}
-                      tags={recipe.categories || []}
-                      likes={recipe.likes || 0}
-                      views={recipe.views || 0}
-                      user_id={recipe.user_id}
-                      username={user.username || ""}
+                      {...recipe}
                     />
                   ))}
                 </div>
-              ) : (
-                <div className="text-center py-10">
-                  <p className="text-muted-foreground">No liked recipes yet</p>
-                </div>
-              )}
-            </TabsContent>
-          </Tabs>
+              </TabsContent>
+            </Tabs>
+          </div>
         </div>
       </main>
       <Footer />
     </>
   )
 }
-

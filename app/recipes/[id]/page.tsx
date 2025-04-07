@@ -127,8 +127,14 @@ export default function RecipeDetail({ params }: { params: { id: string } }) {
 
   // Record recipe view
   useEffect(() => {
+    if (!user?.id) return;
+    
     const recordView = async () => {
-      await recordRecipeView(params.id, user?.id);
+      try {
+        await recordRecipeView(params.id, user.id);
+      } catch (error) {
+        console.error('Failed to record recipe view:', error);
+      }
     };
     
     recordView();
@@ -149,7 +155,6 @@ export default function RecipeDetail({ params }: { params: { id: string } }) {
             </div>
           </div>
           <Skeleton className="aspect-video w-full rounded-lg mb-8" />
-          {/* More loading skeletons */}
         </main>
         <Footer />
       </>
@@ -363,10 +368,8 @@ export default function RecipeDetail({ params }: { params: { id: string } }) {
                     <span className="font-medium">{recipe.users?.username || "anonymous"}</span>
                     <TooltipProvider>
                       <Tooltip>
-                        <TooltipTrigger asChild>
-                          <div className="inline-flex items-center justify-center rounded-full bg-blue-100 p-0.5">
-                            <BadgeCheck className="h-4 w-4 text-blue-500" />
-                          </div>
+                        <TooltipTrigger>
+                          <BadgeCheck className="w-5 h-5 text-blue-500" />
                         </TooltipTrigger>
                         <TooltipContent>
                           <p>Verified Chef</p>
@@ -375,10 +378,10 @@ export default function RecipeDetail({ params }: { params: { id: string } }) {
                     </TooltipProvider>
                   </div>
                 </Link>
-                {recipe.user_id !== user?.id && (
+                {user && user.id !== recipe.user_id && (
                   <FollowButton 
-                    userId={user?.id} 
-                    profileId={recipe.user_id} 
+                    userId={user.id} 
+                    profileId={recipe.user_id}
                     variant="outline"
                     size="sm"
                   />
@@ -661,26 +664,26 @@ export default function RecipeDetail({ params }: { params: { id: string } }) {
                       <Skeleton className="h-3 w-full" />
                     </div>
                   ))
-                ) : similarRecipes.length > 0 ? (
-                  // Display similar recipes retrieved from database
-                  similarRecipes.map((similarRecipe) => (
-                    <RecipeCard
-                      key={similarRecipe.recipe_id}
-                      id={similarRecipe.recipe_id}
-                      title={similarRecipe.title}
-                      image={similarRecipe.image_url || "/placeholder.svg?height=200&width=300"}
-                      description={similarRecipe.description}
-                      tags={similarRecipe.tags || []}
-                      likes={similarRecipe.likes_count || 0}
-                      views={similarRecipe.views_count || 0}
-                      onCollect={handleCollectRecipe}
-                    />
-                  ))
+                ) : similarRecipes && similarRecipes.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+                    {similarRecipes.map((recipe) => (
+                      <RecipeCard
+                        key={recipe.recipe_id}
+                        recipe_id={recipe.recipe_id}
+                        title={recipe.title}
+                        description={recipe.description}
+                        image_url={recipe.image_url}
+                        tags={recipe.tags || []}
+                        likes_count={recipe.likes_count || 0}
+                        views_count={recipe.views_count || 0}
+                        username={recipe.users?.username || "Anonymous"}
+                      />
+                    ))}
+                  </div>
                 ) : (
-                  // Information to display when there are no similar recipes
-                  <p className="text-center text-muted-foreground py-4">
-                    No similar recipes found.
-                  </p>
+                  <div className="text-center text-gray-500">
+                    No similar recipes found
+                  </div>
                 )}
               </div>
             </div>
