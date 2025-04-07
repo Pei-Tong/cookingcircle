@@ -4,6 +4,26 @@ async function deleteRecipe(e){
   try{
     console.log("Starting to delete recipe with ID:", e);
     
+    // First try using direct SQL query approach which bypasses foreign key constraints
+    // This is a more aggressive approach when other methods fail
+    try {
+      console.log("Trying direct SQL delete approach...");
+      
+      // Use RPC to execute a forced deletion that handles foreign key issues
+      const { data, error } = await supabase.rpc('force_delete_recipe', { recipe_id: e });
+      
+      if (!error) {
+        console.log("Recipe deleted successfully using direct SQL method");
+        return true;
+      }
+      
+      console.log("RPC method not available or failed, falling back to standard method:", error);
+    } catch (rpcError) {
+      console.warn("RPC deletion failed, using standard deletion process instead:", rpcError);
+    }
+    
+    // If the RPC method failed or isn't available, continue with the manual deletion process
+    
     // Get the recipe first to make sure it exists
     var {data:r, error:t} = await supabase.from("recipes").select("*").eq("recipe_id", e).single();
     if(t) throw t;
@@ -70,15 +90,32 @@ async function deleteRecipe(e){
       }
     }
     
-    // Add a small delay to ensure all delete operations are processed
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // Use a longer delay to ensure all delete operations are processed
+    await new Promise(resolve => setTimeout(resolve, 2000));
     
     console.log("Now deleting the main recipe");
     var {error:c} = await supabase.from("recipes").delete().eq("recipe_id", e);
     
     if(c) {
       console.error("Failed to delete recipe:", c);
-      throw c;
+      
+      // If deletion failed, try one more extreme approach - use SQL query directly
+      try {
+        console.log("Attempting direct SQL delete as last resort...");
+        const { error: sqlError } = await supabase.rpc('emergency_delete_recipe', { 
+          target_id: e
+        });
+        
+        if (sqlError) {
+          throw sqlError;
+        }
+        
+        console.log("Recipe deleted successfully via emergency SQL method");
+        return true;
+      } catch (sqlError) {
+        console.error("Emergency SQL deletion also failed:", sqlError);
+        throw c;
+      }
     }
     
     console.log("Recipe deleted successfully");
