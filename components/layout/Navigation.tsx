@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { NewRecipeButton } from "@/components/new-recipe-button"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useToast } from "@/components/ui/use-toast"
+import { Plus } from "lucide-react"
 
 interface AuthChangeEvent {
   event: string;
@@ -27,6 +29,7 @@ export function Navigation() {
   const [loading, setLoading] = useState(true) 
   const [cartCount, setCartCount] = useState(0)
   const router = useRouter()
+  const { toast } = useToast()
 
   useEffect(() => {
     const handleAuthChanges = async () => {
@@ -171,10 +174,80 @@ export function Navigation() {
     window.location.href = '/'
   }
 
-  const getNavItems = (): NavItem[] => [
+  const handleAuthRequiredAction = (actionName: string) => {
+    if (!user) {
+      // 新增英文警告訊息
+      alert(`Please login to ${actionName}`)
+      
+      // 保留原有的 toast 通知
+      toast({
+        title: "Login Required",
+        description: `You need to login to ${actionName}`,
+        variant: "destructive"
+      })
+      return false
+    }
+    return true
+  }
+
+  const handleCartClick = (e?: React.MouseEvent) => {
+    // 防止事件冒泡和默認行為
+    if (e) {
+      e.preventDefault()
+      e.stopPropagation()
+    }
+    
+    // 新增日誌輸出
+    console.log("Cart button clicked")
+    
+    if (!user) {
+      // 使用英文警告訊息
+      alert("Please login to view your shopping cart")
+      
+      // 同時顯示 toast 消息
+      toast({
+        title: "Login Required",
+        description: "You need to login to view your shopping cart",
+        variant: "destructive",
+        duration: 3000
+      })
+    } else {
+      // 用戶已登入，導向購物車頁面
+      console.log("User is logged in, navigating to shopping cart")
+      router.push("/shopping-list")
+    }
+  }
+
+  const handleMyRecipesClick = () => {
+    // 檢查用戶是否已登入
+    if (!user) {
+      // 使用英文警告訊息
+      alert("Please login to view your recipes")
+      
+      // 同時顯示 toast 消息
+      toast({
+        title: "Login Required",
+        description: "You need to login to view your recipes",
+        variant: "destructive",
+        duration: 3000
+      })
+      return
+    }
+    
+    // 已登入用戶，導向到個人頁面
+    router.push(`/profile/${user.username || user.email?.split('@')[0]}`)
+  }
+
+  const getNavItems = (): (NavItem | { label: string; onClick: () => void })[] => [
     { label: "Explore", href: "/explore" },
-    { label: "My Recipes", href: user ? `/profile/${user.username || user.email?.split('@')[0]}` : "/login" },
-    { label: "My Cart", href: "/shopping-list" },
+    { 
+      label: "My Recipes", 
+      onClick: handleMyRecipesClick
+    },
+    { 
+      label: "My Cart", 
+      onClick: handleCartClick
+    },
     { label: "Shop", href: "/shop" }
   ];
 
@@ -184,17 +257,27 @@ export function Navigation() {
         <div className="flex items-center gap-8">
           <Link href="/" className="text-2xl font-semibold tracking-tight">Cooking Circle</Link>
           <nav className="hidden md:flex gap-6">
-            {getNavItems().map((item) => (
-              <Link key={item.label} href={item.href} className="text-sm font-medium hover:text-zinc-600 transition-colors">
-                {item.label}
-              </Link>
-            ))}
+            {getNavItems().map((item, index) => 
+              'href' in item ? (
+                <Link key={item.label} href={item.href} className="text-sm font-medium hover:text-zinc-600 transition-colors">
+                  {item.label}
+                </Link>
+              ) : (
+                <button 
+                  key={item.label} 
+                  onClick={item.onClick} 
+                  className="text-sm font-medium hover:text-zinc-600 transition-colors text-left"
+                >
+                  {item.label}
+                </button>
+              )
+            )}
           </nav>
         </div>
 
         {/* Desktop Navigation */}
         <div className="hidden md:flex items-center gap-4">
-          <NewRecipeButton />
+          <NewRecipeButton onAuthNeeded={() => handleAuthRequiredAction("create recipe")} />
           
           {/* Admin link only visible when logged in */}
           {user && (
@@ -225,26 +308,24 @@ export function Navigation() {
               </Button>
             </Link>
           )}
-          <Button variant="ghost" size="icon" className="relative" href="/shopping-list">
+          <button 
+            className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-9 w-9 relative"
+            onClick={handleCartClick}
+            aria-label="Shopping Cart"
+          >
             <ShoppingCart className="h-5 w-5" />
-            {cartCount > 0 && (
-              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center">
-                {cartCount}
-              </span>
-            )}
-          </Button>
+          </button>
         </div>
 
         {/* Mobile Navigation */}
         <div className="flex md:hidden items-center gap-3">
-          <Button variant="ghost" size="icon" className="relative" href="/shopping-list">
+          <button 
+            className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-9 w-9 relative"
+            onClick={handleCartClick}
+            aria-label="Shopping Cart"
+          >
             <ShoppingCart className="h-5 w-5" />
-            {cartCount > 0 && (
-              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center">
-                {cartCount}
-              </span>
-            )}
-          </Button>
+          </button>
           
           <Sheet open={isOpen} onOpenChange={setIsOpen}>
             <SheetTrigger asChild>
@@ -257,10 +338,14 @@ export function Navigation() {
                 <SheetTitle>Menu</SheetTitle>
               </SheetHeader>
               <div className="mt-4 space-y-4">
-                <Button className="w-full justify-start" variant="ghost" asChild>
-                  <Link href="/new-recipe">
-                    Create Recipe
-                  </Link>
+                <Button className="w-full justify-start" variant="ghost" onClick={() => {
+                  if (handleAuthRequiredAction("create recipe")) {
+                    router.push("/create-recipe")
+                    setIsOpen(false)
+                  }
+                }}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Recipe
                 </Button>
                 
                 {/* Admin link only visible when logged in */}
@@ -278,16 +363,29 @@ export function Navigation() {
                   </Button>
                 )}
                 <div className="space-y-3">
-                  {getNavItems().map((item) => (
-                    <Link
-                      key={item.label}
-                      href={item.href}
-                      className="block text-sm font-medium hover:text-zinc-600 transition-colors"
-                      onClick={() => setIsOpen(false)}
-                    >
-                      {item.label}
-                    </Link>
-                  ))}
+                  {getNavItems().map((item, index) => 
+                    'href' in item ? (
+                      <Link
+                        key={item.label}
+                        href={item.href}
+                        className="block text-sm font-medium hover:text-zinc-600 transition-colors"
+                        onClick={() => setIsOpen(false)}
+                      >
+                        {item.label}
+                      </Link>
+                    ) : (
+                      <button
+                        key={item.label}
+                        onClick={() => {
+                          item.onClick()
+                          setIsOpen(false)
+                        }}
+                        className="block text-sm font-medium hover:text-zinc-600 transition-colors text-left w-full"
+                      >
+                        {item.label}
+                      </button>
+                    )
+                  )}
                 </div>
               </div>
             </SheetContent>

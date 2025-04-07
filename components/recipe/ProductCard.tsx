@@ -1,13 +1,12 @@
 'use client'
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Image from "next/image"
 import { Star, ShoppingCart, Check } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { useCartActions } from "@/lib/cartUtils"
-import { useToast } from "@/components/ui/use-toast"
 import { supabase } from "@/lib/supabaseClient"
+import { useToast } from "@/components/ui/use-toast"
 
 interface ProductCardProps {
   id: string
@@ -33,46 +32,156 @@ export function ProductCard({
   onAddToCart 
 }: ProductCardProps) {
   const [loading, setLoading] = useState(false)
-  const { addToCart, isItemInCart, cartItems } = useCartActions()
-  const localToast = useToast()
-  
-  // 判斷商品是否已在購物車中
-  const inCart = isItemInCart(id)
+  const [inCart, setInCart] = useState(false)
+  const { toast } = useToast()
 
-  const handleAddToCart = async (e: React.MouseEvent) => {
+  // Check if the product is already in the cart when the page loads
+  useEffect(() => {
+    const checkCartStatus = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) return
+
+      console.log(`Checking cart status for product: ${name}, id: ${id}, type: ${productType}`)
+      
+      // Always use product_id and product_type for consistency
+      const { data, error } = await supabase
+        .from('shopping_cart')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .eq('product_id', id)
+        .eq('product_type', productType || 'product')
+        .maybeSingle()
+
+      if (error) {
+        console.error(`Error checking cart status:`, error)
+        return
+      }
+
+      console.log(`Cart status for ${name}: ${data ? 'In cart' : 'Not in cart'}`)
+      setInCart(!!data)
+    }
+
+    checkCartStatus()
+  }, [id, name, productType])
+
+  // Handle cart button click
+  const handleCartButtonClick = async (e: React.MouseEvent) => {
     e.preventDefault()
+    e.stopPropagation()
     
-    // 如果有外部的onAddToCart函數，優先使用
+    console.log(`Cart button clicked for product: ${name}, id: ${id}, type: ${productType}`)
+    
+    // If there's an external onAddToCart function, use that first
     if (onAddToCart) {
       onAddToCart()
       return
     }
-
-    // 如果已在購物車中，不執行任何操作
-    if (inCart) return
     
-    // 先檢查登入狀態
+    // Check login status first
     setLoading(true)
-    const { data } = await supabase.auth.getSession()
-    
-    if (!data.session) {
-      localToast.toast({
-        title: "請先登入",
-        description: "您需要登入才能將商品加入購物車",
+    try {
+      const { data } = await supabase.auth.getSession()
+      
+      if (!data.session) {
+        toast({
+          title: "Login Required",
+          description: "Please log in to add items to your cart",
+          variant: "destructive"
+        })
+        // Show English alert message
+        alert("Please login to add items to your cart")
+        return
+      }
+
+      const userId = data.session.user.id
+      
+      console.log(`Processing cart action for: ${name}, id: ${id}, type: ${productType}`)
+      
+      // For simplicity, always use product_id for all product types
+      // This ensures consistent behavior across all product cards
+      if (!inCart) {
+        // Add to cart - first check if user or product ID is valid
+        if (!userId || !id) {
+          console.error("Invalid user ID or product ID", { userId, productId: id });
+          toast({
+            title: "Error",
+            description: "Invalid user or product information",
+            variant: "destructive"
+          })
+          return;
+        }
+        
+        // Create cart item object with required fields
+        const cartItem = {
+          user_id: userId,
+          product_id: id,
+          quantity: 1,
+          product_type: productType || 'product' // Include product_type field
+        };
+        
+        console.log("Adding to cart with data:", cartItem);
+        
+        // Try a different approach by explicitly sending column names
+        const { error } = await supabase
+          .from('shopping_cart')
+          .insert(cartItem)
+        
+        if (error) {
+          console.error("Error adding to cart:", error);
+          toast({
+            title: "Error",
+            description: "Failed to add item to cart",
+            variant: "destructive"
+          })
+          return;
+        }
+        
+        // Update local state
+        setInCart(true)
+        
+        // Show success message
+        toast({
+          title: "Added to Cart",
+          description: `${name} has been added to your cart`
+        })
+      } else {
+        // Remove from cart
+        const { error } = await supabase
+          .from('shopping_cart')
+          .delete()
+          .eq('user_id', userId)
+          .eq('product_id', id)
+          .eq('product_type', productType || 'product');
+        
+        if (error) {
+          console.error("Error removing from cart:", error);
+          toast({
+            title: "Error",
+            description: "Failed to remove item from cart",
+            variant: "destructive"
+          })
+          return;
+        }
+        
+        // Update local state
+        setInCart(false)
+        
+        // Show success message
+        toast({
+          title: "Removed from Cart",
+          description: `${name} has been removed from your cart`
+        })
+      }
+    } catch (err) {
+      console.error("Shopping cart operation error:", err)
+      toast({
+        title: "Error",
+        description: "Failed to update your cart",
         variant: "destructive"
       })
+    } finally {
       setLoading(false)
-      return
     }
-
-    // 否則使用默認的購物車功能
-    await addToCart({
-      id,
-      name,
-      price: parseFloat(price.replace('$', '')),
-      type: productType,
-      quantity: 1
-    }, setLoading)
   }
 
   return (
@@ -85,7 +194,7 @@ export function ProductCard({
             fill 
             className="object-cover" 
             onError={(e) => {
-              // 圖片載入失敗時使用備用圖片
+              // Use fallback image when image loading fails
               const target = e.target as HTMLImageElement;
               if (!target.src.includes('placeholder.jpg')) {
                 target.src = '/placeholder.jpg';
@@ -121,8 +230,10 @@ export function ProductCard({
             variant={inCart ? "default" : "outline"}
             size="icon"
             className={`h-8 w-8 transition-colors ${inCart ? "bg-green-600 hover:bg-green-700" : ""}`}
-            onClick={handleAddToCart}
+            onClick={handleCartButtonClick}
             disabled={loading}
+            data-product-id={id}
+            data-product-type={productType}
           >
             {loading ? (
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-t-transparent border-current"></span>
