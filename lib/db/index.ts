@@ -1,6 +1,3 @@
-<<<<<<< HEAD
- 
-=======
 import { createClient } from "@supabase/supabase-js";
 
 // 環境變數 - 不要在代碼中硬編碼敏感資訊
@@ -296,4 +293,3 @@ export class SupabaseDatabase implements Database {
 
 // 導出資料庫實例
 export const db: Database = new SupabaseDatabase();
->>>>>>> ada
