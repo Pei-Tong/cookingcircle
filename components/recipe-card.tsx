@@ -18,27 +18,27 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { useRouter } from "next/navigation"
 
 interface RecipeCardProps {
-  id: string
+  recipe_id: string
   title: string
-  image: string
   description: string
-  tags: string[]
-  likes: number
-  views: number
-  poster?: string
+  image_url?: string
+  tags?: string[]
+  likes_count?: number
+  views_count?: number
+  username?: string
   isOwner?: boolean
   onDelete?: (id: string) => void
 }
 
 export default function RecipeCard({
-  id,
+  recipe_id,
   title,
-  image,
   description,
-  tags,
-  likes,
-  views,
-  poster = "Anonymous",
+  image_url,
+  tags = [],
+  likes_count = 0,
+  views_count = 0,
+  username = "Anonymous",
   isOwner = false,
   onDelete,
 }: RecipeCardProps) {
@@ -47,8 +47,7 @@ export default function RecipeCard({
 
   const handleDelete = async () => {
     try {
-      // Here you would typically make an API call to delete the recipe
-      await onDelete?.(id)
+      await onDelete?.(recipe_id)
       setShowDeleteDialog(false)
     } catch (error) {
       console.error("Failed to delete recipe:", error)
@@ -56,16 +55,16 @@ export default function RecipeCard({
   }
 
   const handleEdit = () => {
-    router.push(`/recipes/${id}/edit`)
+    router.push(`/recipes/${recipe_id}/edit`)
   }
 
   return (
     <>
-      <Link href={`/recipes/${id}`} className="block">
+      <Link href={`/recipes/${recipe_id}`} className="block">
         <Card className="overflow-hidden h-full transition-all duration-200 hover:shadow-md border border-gray-200 bg-white group">
           <div className="relative aspect-video overflow-hidden">
             <Image
-              src={image || "/placeholder.svg"}
+              src={image_url || "/placeholder.svg"}
               alt={title}
               fill
               className="object-cover transition-transform duration-300 group-hover:scale-105"
@@ -134,8 +133,8 @@ export default function RecipeCard({
           </CardContent>
           <CardFooter className="p-4 pt-0 flex justify-between text-gray-500 text-sm">
             <div className="flex items-center gap-3">
-              <span className="font-medium hover:text-gray-900">{poster}</span>
-              {poster === "Chef Mario" && (
+              <span className="font-medium hover:text-gray-900">{username}</span>
+              {username === "Chef Mario" && (
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -151,11 +150,11 @@ export default function RecipeCard({
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1">
                 <Heart className="h-4 w-4" />
-                <span>{likes}</span>
+                <span>{likes_count}</span>
               </div>
               <div className="flex items-center gap-1">
                 <Eye className="h-4 w-4" />
-                <span>{views}</span>
+                <span>{views_count}</span>
               </div>
             </div>
           </CardFooter>

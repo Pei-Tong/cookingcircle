@@ -7,7 +7,24 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables')
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// 使用全局變量來存儲 Supabase 實例
+let supabase: ReturnType<typeof createClient> | null = null
+
+if (typeof window !== "undefined") {
+  // 只在客戶端初始化一次
+  if (!supabase) {
+    supabase = createClient(supabaseUrl, supabaseAnonKey)
+  }
+} else {
+  // 服務器端每次都創建新實例
+  supabase = createClient(supabaseUrl, supabaseAnonKey)
+}
+
+if (!supabase) {
+  throw new Error('Failed to initialize Supabase client')
+}
+
+export { supabase }
 
 // Types for our database tables
 export interface Recipe {

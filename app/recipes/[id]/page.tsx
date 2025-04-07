@@ -21,11 +21,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Card, CardContent } from "@/components/ui/card"
 import RecipeCard from "@/components/recipe-card"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Navigation } from "@/components/layout/Navigation"
 import { Footer } from "@/components/layout/Footer"
 import { ProductCard } from "@/components/recipe/ProductCard"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { getRecipeById } from "@/lib/db/recipes"
+import type { Recipe } from "@/lib/db/types"
 
 class Fraction {
   constructor(decimal: number) {
@@ -56,6 +58,48 @@ class Fraction {
 
 export default function RecipeDetail({ params }: { params: { id: string } }) {
   const [servings, setServings] = useState(4)
+  const [recipe, setRecipe] = useState<Recipe | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const fetchRecipe = async () => {
+      try {
+        const recipeData = await getRecipeById(params.id)
+        setRecipe(recipeData)
+      } catch (err: any) {
+        setError(err.message || "Failed to load recipe")
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchRecipe()
+  }, [params.id])
+
+  if (loading) {
+    return (
+      <>
+        <Navigation />
+        <main className="max-w-[1200px] mx-auto px-4 py-6">
+          <div>Loading...</div>
+        </main>
+        <Footer />
+      </>
+    )
+  }
+
+  if (error || !recipe) {
+    return (
+      <>
+        <Navigation />
+        <main className="max-w-[1200px] mx-auto px-4 py-6">
+          <div>{error || "Recipe not found"}</div>
+        </main>
+        <Footer />
+      </>
+    )
+  }
 
   const calculateAmount = (baseAmount: string, originalServings = 4) => {
     if (!baseAmount) return baseAmount
@@ -102,13 +146,13 @@ export default function RecipeDetail({ params }: { params: { id: string } }) {
                 <Badge variant="outline">30 min</Badge>
               </div>
               <div className="flex items-center gap-4 mb-6">
-                <Link href="/profile/chef123" className="flex items-center gap-2">
+                <Link href={`/profile/${recipe.user?.username || recipe.user_id}`} className="flex items-center gap-2">
                   <Avatar className="h-8 w-8">
-                    <AvatarImage src="/placeholder.svg" alt="Chef" />
-                    <AvatarFallback>CF</AvatarFallback>
+                    <AvatarImage src={recipe.user?.profile_image || "/placeholder.svg"} alt={recipe.user?.username || "Chef"} />
+                    <AvatarFallback>{recipe.user?.username?.slice(0, 2).toUpperCase() || "??"}</AvatarFallback>
                   </Avatar>
                   <div className="flex items-center gap-2">
-                    <span className="font-medium">Chef Mario</span>
+                    <span className="font-medium">{recipe.user?.username || "Unknown Chef"}</span>
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger asChild>
@@ -123,7 +167,7 @@ export default function RecipeDetail({ params }: { params: { id: string } }) {
                     </TooltipProvider>
                     <span
                       className="text-xs text-muted-foreground hover:text-primary cursor-pointer transition-colors"
-                      title="Follow Chef Mario"
+                      title={`Follow ${recipe.user?.username || "this chef"}`}
                     >
                       • Follow
                     </span>
