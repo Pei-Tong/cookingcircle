@@ -8,14 +8,12 @@ import {
   Bookmark,
   Clock,
   ChefHat,
-  ShoppingCart,
   MessageCircle,
   Plus,
   Minus,
   BadgeCheck,
   Eye,
   Info,
-  Check,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -114,7 +112,6 @@ export default function RecipeDetail({ params }: { params: { id: string } }) {
   const { user } = useAuth()
   const [commentOpen, setCommentOpen] = useState(false)
   const [commentText, setCommentText] = useState("")
-  const [ingredientsInCart, setIngredientsInCart] = useState<Record<string, boolean>>({})
 
   // When recipe data is loaded, initialize the main image URL
   useEffect(() => {
@@ -122,38 +119,6 @@ export default function RecipeDetail({ params }: { params: { id: string } }) {
       setMainImageUrl(recipe.image_url)
     }
   }, [recipe])
-
-  // Check which ingredients are in the cart when user or ingredients change
-  useEffect(() => {
-    if (!user || !ingredients.length) return;
-    
-    const checkCartStatus = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('shopping_cart')
-          .select('product_id')
-          .eq('user_id', user.id)
-          .eq('product_type', 'ingredient');
-        
-        if (error) {
-          console.error('Error checking cart status:', error);
-          return;
-        }
-        
-        // Create a map of ingredient_id -> true for ingredients in cart
-        const inCartMap: Record<string, boolean> = {};
-        data?.forEach(item => {
-          inCartMap[item.product_id] = true;
-        });
-        
-        setIngredientsInCart(inCartMap);
-      } catch (err) {
-        console.error('Failed to check cart status:', err);
-      }
-    };
-    
-    checkCartStatus();
-  }, [user, ingredients]);
 
   // Main image change handler
   const handleMainImageChange = (url: string) => {
@@ -235,8 +200,9 @@ export default function RecipeDetail({ params }: { params: { id: string } }) {
     // 如果轉換結果是NaN，則直接返回原始字符串
     if (isNaN(baseNumeric)) return baseAmount
     
-    // 計算新數量
-    const newAmount = (baseNumeric * servings) / originalServings
+    // 計算新數量 - 使用當前 servings 與原始 servings 的比例來調整
+    const ratio = servings / originalServings
+    const newAmount = baseNumeric * ratio
 
     // 格式化結果
     let formattedAmount: string
@@ -271,259 +237,6 @@ export default function RecipeDetail({ params }: { params: { id: string } }) {
     // Otherwise use a placeholder image
     return "/placeholder.svg?height=600&width=1200";
   };
-
-  // 購物車功能處理
-  const handleAddToCart = (ingredient: any) => {
-    if (!user) {
-      toast({
-        title: "Please Log in",
-        description: "You need to log in to add items to your shopping cart.",
-        variant: "destructive"
-      });
-      return;
-    }
-    
-    // Toggle ingredient in shopping cart database
-    const toggleInCart = async () => {
-      try {
-        // First, check if the item is already in the cart
-        const { data: existingItem, error: checkError } = await supabase
-          .from('shopping_cart')
-          .select('*')
-          .eq('user_id', user.id)
-          .eq('product_id', ingredient.ingredient_id)
-          .eq('product_type', 'ingredient')
-          .maybeSingle();
-        
-        if (checkError) {
-          console.error("Error checking if ingredient is in cart:", checkError);
-          return;
-        }
-        
-        if (existingItem) {
-          // If the item exists, remove it from cart
-          const { error: removeError } = await supabase
-            .from('shopping_cart')
-            .delete()
-            .eq('user_id', user.id)
-            .eq('product_id', ingredient.ingredient_id)
-            .eq('product_type', 'ingredient');
-          
-          if (removeError) {
-            console.error("Error removing ingredient from cart:", removeError);
-            toast({
-              title: "Error",
-              description: "Failed to remove item from cart",
-              variant: "destructive"
-            });
-            return;
-          }
-          
-          // Show success message for removal
-          toast({
-            title: "Removed from Cart",
-            description: `${ingredient.name} has been removed from your shopping cart.`,
-          });
-        } else {
-          // If the item doesn't exist, add it to cart
-          const cartItem = {
-            user_id: user.id,
-            product_id: ingredient.ingredient_id,
-            quantity: 1,
-            product_type: 'ingredient'
-          };
-          
-          const { error: addError } = await supabase
-            .from('shopping_cart')
-            .upsert(cartItem, { 
-              onConflict: 'user_id,product_id,product_type',
-              ignoreDuplicates: false 
-            });
-          
-          if (addError) {
-            console.error("Error adding ingredient to cart:", addError);
-            toast({
-              title: "Error",
-              description: "Failed to add item to cart",
-              variant: "destructive"
-            });
-            return;
-          }
-          
-          // Show success message for addition
-          toast({
-            title: "Added to Cart",
-            description: `${ingredient.name} has been added to your shopping cart.`,
-          });
-        }
-      } catch (err) {
-        console.error("Shopping cart operation error:", err);
-        toast({
-          title: "Error",
-          description: "Failed to update your cart",
-          variant: "destructive"
-        });
-      }
-    };
-    
-    toggleInCart();
-  }
-
-  // 產品購物車功能處理
-  const handleAddProductToCart = (product: any) => {
-    if (!user) {
-      toast({
-        title: "Please Log in",
-        description: "You need to log in to add items to your shopping cart.",
-        variant: "destructive"
-      });
-      return;
-    }
-    
-    // Toggle product in shopping cart database
-    const toggleInCart = async () => {
-      try {
-        // First, check if the product is already in the cart
-        const { data: existingItem, error: checkError } = await supabase
-          .from('shopping_cart')
-          .select('*')
-          .eq('user_id', user.id)
-          .eq('product_id', product.product_id)
-          .eq('product_type', 'kitchenware')
-          .maybeSingle();
-        
-        if (checkError) {
-          console.error("Error checking if product is in cart:", checkError);
-          return;
-        }
-        
-        if (existingItem) {
-          // If the product exists, remove it from cart
-          const { error: removeError } = await supabase
-            .from('shopping_cart')
-            .delete()
-            .eq('user_id', user.id)
-            .eq('product_id', product.product_id)
-            .eq('product_type', 'kitchenware');
-          
-          if (removeError) {
-            console.error("Error removing product from cart:", removeError);
-            toast({
-              title: "Error",
-              description: "Failed to remove item from cart",
-              variant: "destructive"
-            });
-            return;
-          }
-          
-          // Show success message for removal
-          toast({
-            title: "Removed from Cart",
-            description: `${product.name} has been removed from your cart.`,
-          });
-        } else {
-          // If the product doesn't exist, add it to cart
-          const cartItem = {
-            user_id: user.id,
-            product_id: product.product_id,
-            quantity: 1,
-            product_type: 'kitchenware'
-          };
-          
-          console.log("Adding to cart with data:", cartItem);
-          
-          const { error: addError } = await supabase
-            .from('shopping_cart')
-            .insert(cartItem);
-          
-          if (addError) {
-            console.error("Error adding to cart:", addError);
-            toast({
-              title: "Error",
-              description: "Failed to add item to cart",
-              variant: "destructive"
-            });
-            return;
-          }
-          
-          // Show success message for addition
-          toast({
-            title: "Added to Cart",
-            description: `${product.name} has been added to your cart.`,
-          });
-        }
-      } catch (err) {
-        console.error("Shopping cart operation error:", err);
-        toast({
-          title: "Error",
-          description: "Failed to update your cart",
-          variant: "destructive"
-        });
-      }
-    };
-    
-    toggleInCart();
-  }
-
-  // 添加所有食材到購物車
-  const handleAddAllToCart = () => {
-    if (!user) {
-      toast({
-        title: "Please Log in",
-        description: "You need to log in to add items to your shopping list.",
-        variant: "destructive"
-      });
-      return;
-    }
-    
-    // Add all ingredients to shopping cart in database
-    const addAllToCart = async () => {
-      try {
-        // Create array of cart items for all ingredients
-        const cartItems = ingredients.map(ingredient => ({
-          user_id: user.id,
-          product_id: ingredient.ingredient_id,
-          quantity: 1,
-          product_type: 'ingredient'
-        }));
-        
-        console.log("Adding all ingredients to cart:", cartItems);
-        
-        // Insert all ingredients at once
-        const { error } = await supabase
-          .from('shopping_cart')
-          .upsert(cartItems, { 
-            onConflict: 'user_id,product_id,product_type',
-            ignoreDuplicates: false 
-          });
-        
-        if (error) {
-          console.error("Error adding all ingredients to cart:", error);
-          toast({
-            title: "Error",
-            description: "Failed to add ingredients to cart",
-            variant: "destructive"
-          });
-          return;
-        }
-        
-        // Show success message
-        toast({
-          title: "Added to Cart",
-          description: "All ingredients have been added to your shopping list.",
-        });
-      } catch (err) {
-        console.error("Shopping cart batch operation error:", err);
-        toast({
-          title: "Error",
-          description: "Failed to update your cart",
-          variant: "destructive"
-        });
-      }
-    };
-    
-    addAllToCart();
-  }
 
   // 處理評論提交
   const handleCommentSubmit = () => {
@@ -710,10 +423,6 @@ export default function RecipeDetail({ params }: { params: { id: string } }) {
               <TabsContent value="ingredients" className="pt-6">
                 <div className="flex justify-between items-center mb-4">
                   <h2 className="text-xl font-semibold">Ingredients</h2>
-                  <Button onClick={handleAddAllToCart}>
-                    <ShoppingCart className="mr-2 h-4 w-4" />
-                    Add All to Shopping List
-                  </Button>
                 </div>
                 <div className="border rounded-lg overflow-hidden">
                   {/* Header */}
@@ -725,7 +434,6 @@ export default function RecipeDetail({ params }: { params: { id: string } }) {
                         <span className="w-24 font-semibold text-sm">Unit</span>
                         <span className="font-semibold text-sm">Notes</span>
                       </div>
-                      <span className="w-12"></span> {/* Space for shopping cart button */}
                     </div>
                   </div>
 
@@ -739,18 +447,6 @@ export default function RecipeDetail({ params }: { params: { id: string } }) {
                           <span className="w-24 text-sm">{ingredient.unit}</span>
                           <span className="text-sm text-muted-foreground">{ingredient.notes}</span>
                         </div>
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          className={`p-1 h-8 w-8 ${ingredientsInCart[ingredient.ingredient_id] ? 'text-green-600' : ''}`}
-                          onClick={() => handleAddToCart(ingredient)}
-                        >
-                          {ingredientsInCart[ingredient.ingredient_id] ? (
-                            <Check className="h-4 w-4" />
-                          ) : (
-                            <ShoppingCart className="h-4 w-4" />
-                          )}
-                        </Button>
                       </div>
                     ))}
                   </div>
