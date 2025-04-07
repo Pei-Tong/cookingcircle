@@ -1,142 +1,92 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { UserPlus, UserCheck } from "lucide-react"
+import { UserPlus, UserCheck, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { toast } from "@/components/ui/use-toast"
-import { supabaseClient } from "@/lib/db/index"
+import { supabase } from "@/lib/supabaseClient"
 
 interface FollowButtonProps {
-  userId?: string        // 當前登錄用戶的ID
-  profileId: string     // 要關注/取消關注的用戶ID
+  userId?: string        // Current logged in user ID
+  profileId: string     // User ID to follow/unfollow
   initialFollowing?: boolean
   variant?: "ghost" | "outline" | "default"
   size?: "sm" | "default" | "lg"
+  onFollowChange?: (isFollowing: boolean) => void // Callback for parent component
 }
 
-export function FollowButton({ 
-  userId, 
-  profileId,
-  initialFollowing = false,
-  variant = "default", 
-  size = "sm" 
-}: FollowButtonProps) {
-  const [isFollowing, setIsFollowing] = useState(initialFollowing)
-  const [isLoading, setIsLoading] = useState(false)
+export const FollowButton = ({ userId, profileId, initialFollowing, onFollowChange }: FollowButtonProps) => {
+  const [isFollowing, setIsFollowing] = useState(initialFollowing);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   
-  // 檢查是否已關注
-  useEffect(() => {
-    if (!userId) return
-    
-    async function checkIfFollowing() {
-      try {
-        const { data, error } = await supabaseClient
-          .from('user_follows')
-          .select('follow_id')
-          .eq('follower_id', userId)
-          .eq('following_id', profileId)
-          .single()
-        
-        if (error && error.code !== 'PGRST116') {
-          console.error('Error checking follow status:', error)
-          return
-        }
-        
-        setIsFollowing(!!data)
-      } catch (error) {
-        console.error('Error checking follow status:', error)
-      }
-    }
-    
-    checkIfFollowing()
-  }, [userId, profileId])
-  
-  const handleFollow = async () => {
+  const toggleFollow = async () => {
     if (!userId) {
-      toast({
-        title: "Sign in required",
-        description: "Please sign in to follow users",
-        variant: "destructive"
-      })
-      return
+      setError("Please log in to follow users");
+      console.error("Follow failed: No user ID provided (user not logged in)");
+      return;
     }
     
-    // 不能關注自己
-    if (userId === profileId) {
-      toast({
-        title: "Cannot follow yourself",
-        description: "You cannot follow your own profile",
-        variant: "destructive"
-      })
-      return
-    }
-    
-    setIsLoading(true)
+    setIsLoading(true);
+    setError(null);
     
     try {
-      if (isFollowing) {
-        // 取消關注
-        const { error } = await supabaseClient
-          .from('user_follows')
-          .delete()
-          .eq('follower_id', userId)
-          .eq('following_id', profileId)
-        
-        if (error) throw error
-        
-        setIsFollowing(false)
-        toast({
-          title: "Unfollowed",
-          description: "You have unfollowed this user"
-        })
-      } else {
-        // 添加關注
-        const { error } = await supabaseClient
-          .from('user_follows')
-          .insert({
-            follower_id: userId,
-            following_id: profileId
-          })
-        
-        if (error) throw error
-        
-        setIsFollowing(true)
-        toast({
-          title: "Following",
-          description: "You are now following this user"
-        })
+      console.log(`Attempting to toggle follow: User=${userId}, Profile=${profileId}, Current status=${isFollowing}`);
+      
+      const response = await fetch('/api/follow', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          follower_id: userId,
+          following_id: profileId,
+          action: isFollowing ? 'unfollow' : 'follow'
+        }),
+        credentials: 'include', // Important: Include cookies with the request
+      });
+      
+      const data = await response.json();
+      console.log("Follow API response:", data);
+      
+      if (!response.ok) {
+        throw new Error(data.message || "Failed to update follow status");
       }
-    } catch (error) {
-      console.error('Error toggling follow:', error)
-      toast({
-        title: "Error",
-        description: "Failed to update follow status. Please try again.",
-        variant: "destructive"
-      })
+      
+      // Toggle local state
+      setIsFollowing(!isFollowing);
+      
+      // Notify parent component
+      if (onFollowChange) {
+        onFollowChange(!isFollowing);
+      }
+    } catch (err) {
+      console.error("Error toggling follow status:", err);
+      setError(err instanceof Error ? err.message : "Failed to update follow status");
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
   
   return (
-    <Button 
-      variant={variant} 
-      size={size} 
-      onClick={handleFollow}
-      disabled={isLoading || userId === profileId} // 不能關注自己
-      className={`gap-1 ${isFollowing ? "bg-primary/10 text-primary hover:bg-primary/20" : ""}`}
-    >
-      {isFollowing ? (
-        <>
-          <UserCheck className="h-4 w-4" />
-          <span>Following</span>
-        </>
-      ) : (
-        <>
-          <UserPlus className="h-4 w-4" />
-          <span>Follow</span>
-        </>
-      )}
-    </Button>
-  )
-} 
+    <div>
+      <Button
+        variant={isFollowing ? "outline" : "default"}
+        size="sm"
+        disabled={isLoading || !userId}
+        onClick={toggleFollow}
+        className="ml-2"
+      >
+        {isLoading ? (
+          <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> {isFollowing ? "Unfollowing..." : "Following..."}</>
+        ) : isFollowing ? (
+          "Following"
+        ) : (
+          "Follow"
+        )}
+      </Button>
+      {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
+      {!userId && <p className="text-xs text-gray-500 mt-1">Log in to follow users</p>}
+    </div>
+  );
+}; 

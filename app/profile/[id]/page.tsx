@@ -17,6 +17,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Skeleton } from "@/components/ui/skeleton"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { supabase } from "@/lib/supabaseClient"
+import { FollowButton } from "@/components/user/FollowButton"
 
 interface FilterPillProps {
   label: string
@@ -89,12 +90,60 @@ export default function UserProfile({ params }: { params: { id: string } }) {
   const [isFollowing, setIsFollowing] = useState<boolean>(false)
   const [sortOption, setSortOption] = useState<string>("recent")
   const [activeFilter, setActiveFilter] = useState("All")
+  const [authChecked, setAuthChecked] = useState<boolean>(false)
 
   const filterCategories = [
     "All", "Main Course", "Appetizers", "Desserts", "Vegetarian",
     "Quick & Easy", "Italian", "Asian", "Baking", "Healthy",
     "Under 30 mins", "Gluten-Free",
   ]
+
+  // Check authentication directly when component mounts
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        console.log("Checking auth status...");
+        
+        // Try to get Supabase session
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError) {
+          console.error("Session retrieval error:", sessionError);
+          return false;
+        }
+        
+        if (session) {
+          console.log("Session found, user is authenticated");
+          return true;
+        } else {
+          console.log("No session found, user is NOT authenticated");
+          
+          // Try refreshing the session
+          const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+          
+          if (refreshError) {
+            console.error("Session refresh error:", refreshError);
+            return false;
+          }
+          
+          if (refreshData.session) {
+            console.log("Session refreshed successfully");
+            return true;
+          }
+        }
+        
+        return false;
+      } catch (err) {
+        console.error("Auth check error:", err);
+        return false;
+      }
+    };
+    
+    checkAuth().then(isAuth => {
+      setAuthChecked(true);
+      console.log("Auth check completed, authenticated:", isAuth);
+    });
+  }, []);
 
   // Get current user and profile user
   useEffect(() => {
@@ -113,6 +162,12 @@ export default function UserProfile({ params }: { params: { id: string } }) {
             .single()
             
           setCurrentUser(currentUserData)
+          console.log("Current user is authenticated:", currentUserData?.username || session.user.id)
+        } else {
+          console.log("No active session - user not authenticated")
+          
+          // Even if user is not logged in, set currentUser to null
+          setCurrentUser(null)
         }
         
         // Get profile user (from URL parameter)
@@ -127,6 +182,7 @@ export default function UserProfile({ params }: { params: { id: string } }) {
           
         if (usernameMatch) {
           userData = usernameMatch
+          console.log("Found user by username:", usernameMatch.username)
         } else {
           // If not found by username, try by user_id
           const { data: userIdMatch } = await supabase
@@ -136,24 +192,36 @@ export default function UserProfile({ params }: { params: { id: string } }) {
             .single()
             
           userData = userIdMatch
+          console.log("Found user by ID:", userIdMatch?.username || params.id)
         }
         
         if (userData) {
           setUser(userData)
           await fetchUserContent(userData.user_id)
           
-          // Fetch follower and following counts
-          const [followers, following] = await Promise.all([
-            getFollowerCount(userData.user_id),
-            getFollowingCount(userData.user_id)
-          ])
-          
-          setFollowerCount(followers)
-          setFollowingCount(following)
+          // Fetch fresh follower and following counts directly from the database
+          try {
+            const { data: latestUser, error: fetchError } = await supabase
+              .from('users')
+              .select('followers_count, following_count')
+              .eq('user_id', userData.user_id)
+              .single();
+              
+            if (fetchError) {
+              console.error("Error fetching fresh counts:", fetchError);
+            } else if (latestUser) {
+              console.log("Latest counts from DB:", latestUser.followers_count, latestUser.following_count);
+              setFollowerCount(latestUser.followers_count || 0);
+              setFollowingCount(latestUser.following_count || 0);
+            }
+          } catch (countError) {
+            console.error("Error in fetching counts:", countError);
+          }
           
           // Check if current user is following this profile
-          if (currentUser) {
+          if (currentUser?.user_id) {
             const isFollowing = await checkIsFollowing(currentUser.user_id, userData.user_id)
+            console.log("Current user following status:", isFollowing)
             setIsFollowing(isFollowing)
           }
         } else {
@@ -169,18 +237,84 @@ export default function UserProfile({ params }: { params: { id: string } }) {
     
     async function fetchUserContent(userId: string) {
       try {
-        // Fetch user's recipes
-        const { data: recipes } = await supabase
-          .from('recipes')
-          .select('*, users!inner(*)')
-          .eq('user_id', userId)
+        console.log("Fetching content for user ID:", userId);
         
-        if (recipes) {
-          setUserRecipes(recipes)
+        // Directly query all recipes to check for data integrity
+        const { data: allRecipes, error: allRecipesError } = await supabase
+          .from('recipes')
+          .select('recipe_id, title, user_id')
+          .limit(10);
+          
+        console.log("Sample of all recipes in database:", allRecipes);
+        
+        if (allRecipesError) {
+          console.error("Error fetching all recipes:", allRecipesError);
+        }
+        
+        // Fetch user's recipes
+        const { data: recipes, error: recipesError } = await supabase
+          .from('recipes')
+          .select('*')
+          .eq('user_id', userId);
+        
+        if (recipesError) {
+          console.error("Error fetching recipes:", recipesError);
+        }
+        
+        console.log("User recipes:", recipes);
+        
+        // Fallback to fetch recipes by username if user_id query returns no results
+        if (!recipes || recipes.length === 0) {
+          console.log("No recipes found with user_id, trying to get user info to verify");
+          
+          // Get user info to double-check
+          const { data: userData } = await supabase
+            .from('users')
+            .select('username, user_id')
+            .eq('user_id', userId)
+            .single();
+            
+            console.log("User verification data:", userData);
+            
+            // Try to get recipes that might not have user_id but can be matched by other means
+            if (userData && userData.username) {
+              console.log("Attempting to find recipes by other means for username:", userData.username);
+              
+              // This is a fallback if required - can be customized based on your database structure
+              // For example, if recipes have a creator_name field instead of user_id
+              const { data: alternativeRecipes, error } = await supabase
+                .from('recipes')
+                .select('*');
+                
+                if (error) {
+                  console.error("Error in fallback recipe fetch:", error);
+                } else {
+                  console.log("All available recipes:", alternativeRecipes);
+                  
+                  // Manually find recipes that might belong to this user through other means
+                  // This is just an example - adjust based on your actual data structure
+                  const potentialUserRecipes = alternativeRecipes?.filter(recipe => 
+                    !recipe.user_id || recipe.user_id === ""
+                  ) || [];
+                  
+                  console.log("Potential unassigned recipes:", potentialUserRecipes);
+                  
+                  if (potentialUserRecipes.length > 0) {
+                    console.log("Found some unassigned recipes that could belong to this user");
+                    setUserRecipes(potentialUserRecipes);
+                  } else {
+                    setUserRecipes([]);
+                  }
+                }
+            } else {
+              setUserRecipes([]);
+            }
+        } else {
+          setUserRecipes(recipes);
         }
         
         // Fetch saved recipes
-        const { data: savedRecipesData } = await supabase
+        const { data: savedRecipesData, error: savedError } = await supabase
           .from('recipe_collections')
           .select(`
             recipe_id,
@@ -193,30 +327,44 @@ export default function UserProfile({ params }: { params: { id: string } }) {
               likes_count,
               views_count,
               user_id,
-              user:profiles (
+              users (
                 username
               )
             )
           `)
-          .eq('user_id', userId) as { data: SavedRecipeData[] | null }
+          .eq('user_id', userId);
         
-        if (savedRecipesData) {
-          const savedRecipes = savedRecipesData.map(item => ({
-            id: item.recipes.recipe_id,
-            title: item.recipes.title,
-            description: item.recipes.description,
-            image: item.recipes.image_url,
-            tags: item.recipes.tags || [],
-            likes: item.recipes.likes_count,
-            views: item.recipes.views_count,
-            user_id: item.recipes.user_id,
-            username: item.recipes.user?.username
-          }))
-          setSavedRecipes(savedRecipes)
+        if (savedError) {
+          console.error("Error fetching saved recipes:", savedError);
+        }
+        
+        console.log("Saved recipes data:", savedRecipesData);
+        
+        if (savedRecipesData && savedRecipesData.length > 0) {
+          const savedRecipes: RecipeCardData[] = savedRecipesData
+            .filter(item => item.recipes)
+            .map(item => {
+              const recipe = item.recipes as any;
+              return {
+                id: recipe.recipe_id,
+                title: recipe.title,
+                description: recipe.description,
+                image: recipe.image_url,
+                tags: recipe.tags || [],
+                likes: recipe.likes_count || 0,
+                views: recipe.views_count || 0,
+                user_id: recipe.user_id,
+                username: recipe.users?.username
+              };
+            });
+          
+          setSavedRecipes(savedRecipes);
+        } else {
+          setSavedRecipes([]);
         }
         
         // Fetch liked recipes
-        const { data: likedRecipesData } = await supabase
+        const { data: likedRecipesData, error: likedError } = await supabase
           .from('recipe_likes')
           .select(`
             recipe_id,
@@ -229,35 +377,49 @@ export default function UserProfile({ params }: { params: { id: string } }) {
               likes_count,
               views_count,
               user_id,
-              user:profiles (
+              users (
                 username
               )
             )
           `)
-          .eq('user_id', userId) as { data: LikedRecipeData[] | null }
+          .eq('user_id', userId);
         
-        if (likedRecipesData) {
-          const likedRecipes = likedRecipesData.map(item => ({
-            id: item.recipes.recipe_id,
-            title: item.recipes.title,
-            description: item.recipes.description,
-            image: item.recipes.image_url,
-            tags: item.recipes.tags || [],
-            likes: item.recipes.likes_count,
-            views: item.recipes.views_count,
-            user_id: item.recipes.user_id,
-            username: item.recipes.user?.username
-          }))
-          setLikedRecipes(likedRecipes)
+        if (likedError) {
+          console.error("Error fetching liked recipes:", likedError);
+        }
+        
+        console.log("Liked recipes data:", likedRecipesData);
+        
+        if (likedRecipesData && likedRecipesData.length > 0) {
+          const likedRecipes: RecipeCardData[] = likedRecipesData
+            .filter(item => item.recipes)
+            .map(item => {
+              const recipe = item.recipes as any;
+              return {
+                id: recipe.recipe_id,
+                title: recipe.title,
+                description: recipe.description,
+                image: recipe.image_url,
+                tags: recipe.tags || [],
+                likes: recipe.likes_count || 0,
+                views: recipe.views_count || 0,
+                user_id: recipe.user_id,
+                username: recipe.users?.username
+              };
+            });
+          
+          setLikedRecipes(likedRecipes);
+        } else {
+          setLikedRecipes([]);
         }
       } catch (err) {
-        console.error("Error fetching user content:", err)
-        setError(err instanceof Error ? err.message : "Failed to load user content")
+        console.error("Error fetching user content:", err);
+        setError(err instanceof Error ? err.message : "Failed to load user content");
       }
     }
     
     fetchUsers()
-  }, [params.id])
+  }, [params.id, authChecked])
 
   const handleFollowToggle = async () => {
     if (!currentUser || !user) return
@@ -343,13 +505,35 @@ export default function UserProfile({ params }: { params: { id: string } }) {
                     </TooltipProvider>
                   )}
                   {currentUser?.user_id !== user.user_id && (
-                    <Button 
-                      variant={isFollowing ? "outline" : "default"}
-                      size="sm"
-                      onClick={handleFollowToggle}
-                    >
-                      {isFollowing ? "Following" : "Follow"}
-                    </Button>
+                    <FollowButton 
+                      userId={currentUser?.user_id}
+                      profileId={user.user_id}
+                      initialFollowing={isFollowing}
+                      onFollowChange={(following) => {
+                        // Update follower count immediately in UI
+                        setIsFollowing(following);
+                        setFollowerCount(prev => following ? prev + 1 : Math.max(0, prev - 1));
+                        
+                        // Fetch fresh counts from the database after a short delay
+                        setTimeout(async () => {
+                          try {
+                            const { data: refreshedUser, error: refreshError } = await supabase
+                              .from('users')
+                              .select('followers_count, following_count')
+                              .eq('user_id', user.user_id)
+                              .single();
+                              
+                            if (!refreshError && refreshedUser) {
+                              console.log("Refreshed counts:", refreshedUser.followers_count, refreshedUser.following_count);
+                              setFollowerCount(refreshedUser.followers_count || 0);
+                              setFollowingCount(refreshedUser.following_count || 0);
+                            }
+                          } catch (e) {
+                            console.error("Error refreshing counts:", e);
+                          }
+                        }, 500);
+                      }}
+                    />
                   )}
                 </div>
                 {currentUser?.user_id === user.user_id && (
@@ -424,44 +608,67 @@ export default function UserProfile({ params }: { params: { id: string } }) {
                 </div>
                 */}
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-                  {userRecipes.map((recipe) => (
-                    <RecipeCard 
-                      key={recipe.recipe_id}
-                      id={recipe.recipe_id}
-                      title={recipe.title}
-                      description={recipe.description}
-                      image={recipe.image_url || ''}
-                      tags={recipe.tags || []}
-                      likes={recipe.likes_count}
-                      views={recipe.views_count}
-                      user_id={recipe.user_id}
-                      username={user.username}
-                    />
-                  ))}
-                </div>
+                {userRecipes.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+                    {userRecipes.map((recipe) => (
+                      <RecipeCard 
+                        key={recipe.recipe_id || `recipe-${Math.random()}`}
+                        id={recipe.recipe_id || `temp-${Math.random()}`}
+                        title={recipe.title || 'Untitled Recipe'}
+                        description={recipe.description || 'No description available'}
+                        image={recipe.image_url || '/placeholder.jpg'}
+                        tags={recipe.tags || []}
+                        likes={recipe.likes_count || 0}
+                        views={recipe.views_count || 0}
+                        user_id={recipe.user_id || user.user_id}
+                        username={user.username || 'Unknown user'}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <p className="text-gray-500 mb-4">No recipes found</p>
+                    {currentUser?.user_id === user.user_id && (
+                      <Button onClick={() => router.push('/create-recipe')}>
+                        Create Your First Recipe
+                      </Button>
+                    )}
+                  </div>
+                )}
               </TabsContent>
 
               <TabsContent value="saved" className="pt-6">
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-                  {savedRecipes.map((recipe) => (
-                    <RecipeCard 
-                      key={recipe.id}
-                      {...recipe}
-                    />
-                  ))}
-                </div>
+                {savedRecipes.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+                    {savedRecipes.map((recipe) => (
+                      <RecipeCard 
+                        key={recipe.id}
+                        {...recipe}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <p className="text-gray-500">No saved recipes found</p>
+                  </div>
+                )}
               </TabsContent>
 
               <TabsContent value="liked" className="pt-6">
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-                  {likedRecipes.map((recipe) => (
-                    <RecipeCard 
-                      key={recipe.id}
-                      {...recipe}
-                    />
-                  ))}
-                </div>
+                {likedRecipes.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+                    {likedRecipes.map((recipe) => (
+                      <RecipeCard 
+                        key={recipe.id}
+                        {...recipe}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <p className="text-gray-500">No liked recipes found</p>
+                  </div>
+                )}
               </TabsContent>
             </Tabs>
           </div>
