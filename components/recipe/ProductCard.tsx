@@ -192,7 +192,8 @@ export function ProductCard({
             src={image || "/placeholder.jpg"} 
             alt={name} 
             fill 
-            className="object-cover" 
+            className="object-cover"
+            priority
             onError={(e) => {
               // Use fallback image when image loading fails
               const target = e.target as HTMLImageElement;

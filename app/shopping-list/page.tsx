@@ -169,11 +169,16 @@ export default function ShoppingList() {
                  ingredientDetails?.name || 
                  `Item ${cartItem.product_id.substring(0, 8)}`,
             description: productDetails?.description || ingredientDetails?.description || "",
-            price: productDetails?.price || 0,
+            price: productDetails?.price || ingredientDetails?.price || 0,
             image_url: productDetails?.image_url || "/placeholder.jpg",
             category: productDetails?.category || ingredientDetails?.category || "other",
             unit: productDetails?.unit || ingredientDetails?.unit || "item",
             amount: productDetails?.amount || ingredientDetails?.quantity || ""
+          }
+          
+          // Log the price source for debugging
+          if (!productDetails?.price && ingredientDetails?.price) {
+            console.log(`Using ingredient price for ${ingredientDetails.name}: $${ingredientDetails.price}`)
           }
           
           return {
@@ -575,234 +580,108 @@ export default function ShoppingList() {
                   </CardContent>
                 </Card>
               ) : (
-                <Tabs defaultValue="all">
-                  <TabsList className="grid w-full grid-cols-3">
-                    <TabsTrigger value="all">All Items</TabsTrigger>
-                    <TabsTrigger value="categories">By Category</TabsTrigger>
-                    <TabsTrigger value="add">Add Items</TabsTrigger>
-                  </TabsList>
-
-                  <TabsContent value="all" className="pt-6">
-                    <Card>
-                      <CardHeader className="pb-3">
-                        <CardTitle>All Items ({cartItems.length})</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        {cartItems.length > 0 && (
-                          <div className="flex items-center justify-between mb-4 pb-2 border-b">
+                <div className="pt-6">
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle>All Items ({cartItems.length})</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {cartItems.length > 0 && (
+                        <div className="flex items-center justify-between mb-4 pb-2 border-b">
+                          <div className="flex items-center gap-2">
+                            <Checkbox 
+                              id="select-all" 
+                              checked={selectedItems.length === cartItems.length}
+                              onCheckedChange={toggleAllItems}
+                            />
+                            <label htmlFor="select-all" className="text-sm font-medium">
+                              Select All
+                            </label>
+                          </div>
+                          
+                          {selectedItems.length > 0 && (
+                            <Button 
+                              variant="destructive" 
+                              size="sm" 
+                              onClick={deleteSelectedItems}
+                              className="flex items-center gap-1"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              Delete Selected ({selectedItems.length})
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                      
+                      <div className="space-y-4">
+                        {cartItems.map((item) => (
+                          <div key={item.id} className="flex items-center justify-between p-2 border-b">
                             <div className="flex items-center gap-2">
                               <Checkbox 
-                                id="select-all" 
-                                checked={selectedItems.length === cartItems.length}
-                                onCheckedChange={toggleAllItems}
+                                id={`item-${item.id}`} 
+                                checked={selectedItems.includes(item.id)}
+                                onCheckedChange={() => toggleItemSelection(item.id)}
                               />
-                              <label htmlFor="select-all" className="text-sm font-medium">
-                                Select All
+                              <label
+                                htmlFor={`item-${item.id}`}
+                                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex gap-2"
+                              >
+                                <div className="flex items-center gap-4 w-full">
+                                  <span className="font-medium w-48 truncate" title={item.product?.name}>
+                                    {item.product?.name || `Item ${item.product_id.slice(0, 6)}`}
+                                  </span>
+                                  <div className="flex items-center space-x-2">
+                                    <span className="text-right w-16 truncate text-gray-600">
+                                      {item.product?.amount || item.quantity}
+                                    </span>
+                                    <span className="w-24 truncate text-gray-600">
+                                      {item.product?.unit || 'item(s)'}
+                                    </span>
+                                    <span className="w-20 text-right font-medium text-green-600">
+                                      ${(item.product?.price || 0).toFixed(2)}
+                                    </span>
+                                  </div>
+                                </div>
                               </label>
                             </div>
-                            
-                            {selectedItems.length > 0 && (
-                              <Button 
-                                variant="destructive" 
-                                size="sm" 
-                                onClick={deleteSelectedItems}
-                                className="flex items-center gap-1"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                                Delete Selected ({selectedItems.length})
-                              </Button>
-                            )}
-                          </div>
-                        )}
-                        
-                        <div className="space-y-4">
-                          {cartItems.map((item) => (
-                            <div key={item.id} className="flex items-center justify-between p-2 border-b">
+                            <div className="flex flex-col gap-2 items-center">
                               <div className="flex items-center gap-2">
-                                <Checkbox 
-                                  id={`item-${item.id}`} 
-                                  checked={selectedItems.includes(item.id)}
-                                  onCheckedChange={() => toggleItemSelection(item.id)}
-                                />
-                                <label
-                                  htmlFor={`item-${item.id}`}
-                                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex gap-2"
+                                <Button
+                                  variant="outline"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => updateQuantity(item.id, Math.max(1, item.quantity - 1))}
                                 >
-                                  <div className="flex items-center gap-4 w-full">
-                                    <span className="font-medium w-48 truncate" title={item.product?.name}>
-                                      {item.product?.name || `Item ${item.product_id.slice(0, 6)}`}
-                                    </span>
-                                    <div className="flex items-center space-x-2">
-                                      <span className="text-right w-16 truncate text-gray-600">
-                                        {item.product?.amount || item.quantity}
-                                      </span>
-                                      <span className="w-24 truncate text-gray-600">
-                                        {item.product?.unit || 'item(s)'}
-                                      </span>
-                                      <span className="w-20 text-right font-medium text-green-600">
-                                        ${(item.product?.price || 0).toFixed(2)}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </label>
+                                  <MinusCircle className="h-4 w-4" />
+                                </Button>
+                                <span className="w-6 text-center">{item.quantity}</span>
+                                <Button
+                                  variant="outline"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                                >
+                                  <PlusCircle className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-red-500"
+                                  onClick={() => removeFromCart(item.id)}
+                                >
+                                  <Trash className="h-4 w-4" />
+                                </Button>
                               </div>
-                              <div className="flex flex-col gap-2 items-center">
-                                <div className="flex items-center gap-2">
-                                  <Button
-                                    variant="outline"
-                                    size="icon"
-                                    className="h-8 w-8"
-                                    onClick={() => updateQuantity(item.id, Math.max(1, item.quantity - 1))}
-                                  >
-                                    <MinusCircle className="h-4 w-4" />
-                                  </Button>
-                                  <span className="w-6 text-center">{item.quantity}</span>
-                                  <Button
-                                    variant="outline"
-                                    size="icon"
-                                    className="h-8 w-8"
-                                    onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                                  >
-                                    <PlusCircle className="h-4 w-4" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8 text-red-500"
-                                    onClick={() => removeFromCart(item.id)}
-                                  >
-                                    <Trash className="h-4 w-4" />
-                                  </Button>
-                                </div>
-                                <span className="text-xs text-gray-500">
-                                  Subtotal: ${((item.product?.price || 0) * item.quantity).toFixed(2)}
-                                </span>
-                              </div>
+                              <span className="text-xs text-gray-500">
+                                Subtotal: ${((item.product?.price || 0) * item.quantity).toFixed(2)}
+                              </span>
                             </div>
-                          ))}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </TabsContent>
-
-                  <TabsContent value="categories" className="pt-6">
-                    <Card>
-                      <CardHeader className="pb-3">
-                        <CardTitle>Items by Category</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-6">
-                          {Object.entries(getItemsByCategory()).map(([category, items]) => (
-                            <div key={category}>
-                              <h3 className="font-semibold mb-4 capitalize">{category}</h3>
-                              
-                              {items.length > 0 && (
-                                <div className="flex items-center justify-between mb-2">
-                                  <div className="flex items-center gap-2">
-                                    <Checkbox 
-                                      id={`select-cat-${category}`} 
-                                      checked={items.every(item => selectedItems.includes(item.id))}
-                                      onCheckedChange={() => {
-                                        if (items.every(item => selectedItems.includes(item.id))) {
-                                          setSelectedItems(prev => prev.filter(id => !items.some(item => item.id === id)))
-                                        } else {
-                                          setSelectedItems(prev => [...prev, ...items.map(item => item.id).filter(id => !prev.includes(id))])
-                                        }
-                                      }}
-                                    />
-                                    <label htmlFor={`select-cat-${category}`} className="text-sm font-medium">
-                                      Select All in {category}
-                                    </label>
-                                  </div>
-                                </div>
-                              )}
-                              
-                              <div className="space-y-2">
-                                {items.map((item) => (
-                                  <div key={item.id} className="flex items-center justify-between p-2 border-b">
-                                    <div className="flex items-center gap-2">
-                                      <Checkbox 
-                                        id={`cat-${item.id}`} 
-                                        checked={selectedItems.includes(item.id)}
-                                        onCheckedChange={() => toggleItemSelection(item.id)}
-                                      />
-                                      <label htmlFor={`cat-${item.id}`} className="flex gap-2">
-                                        <span>{item.product?.name}</span>
-                                        {item.product?.amount && (
-                                          <span className="text-muted-foreground">
-                                            {item.product.amount} {item.product.unit || ''}
-                                          </span>
-                                        )}
-                                        <span className="text-muted-foreground text-xs">({item.product_type})</span>
-                                      </label>
-                                    </div>
-                                    <div className="flex flex-col gap-2 items-center">
-                                      <div className="flex items-center gap-2">
-                                        <Button
-                                          variant="outline"
-                                          size="icon"
-                                          className="h-8 w-8"
-                                          onClick={() => updateQuantity(item.id, Math.max(1, item.quantity - 1))}
-                                        >
-                                          <MinusCircle className="h-4 w-4" />
-                                        </Button>
-                                        <span className="w-6 text-center">{item.quantity}</span>
-                                        <Button
-                                          variant="outline"
-                                          size="icon"
-                                          className="h-8 w-8"
-                                          onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                                        >
-                                          <PlusCircle className="h-4 w-4" />
-                                        </Button>
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-8 w-8 text-red-500"
-                                          onClick={() => removeFromCart(item.id)}
-                                        >
-                                          <Trash className="h-4 w-4" />
-                                        </Button>
-                                      </div>
-                                      <span className="text-xs text-gray-500">
-                                        Subtotal: ${((item.product?.price || 0) * item.quantity).toFixed(2)}
-                                      </span>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </TabsContent>
-
-                  <TabsContent value="add" className="pt-6">
-                    <Card>
-                      <CardHeader className="pb-3">
-                        <CardTitle>Add New Item</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="flex items-center mb-4">
-                          <Input 
-                            placeholder="Add new item" 
-                            className="mr-2" 
-                            value={newItemName}
-                            onChange={(e) => setNewItemName(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && addNewItem()}
-                          />
-                          <Button size="sm" onClick={addNewItem}>
-                            <Plus className="h-4 w-4" />
-                          </Button>
-                        </div>
-                        <p className="text-sm text-muted-foreground">
-                          Add any additional items you need to your shopping list.
-                        </p>
-                      </CardContent>
-                    </Card>
-                  </TabsContent>
-                </Tabs>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
               )}
               
               {/* Show total at the bottom of items list */}

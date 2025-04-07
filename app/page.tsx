@@ -76,6 +76,7 @@ interface Ingredient {
   name: string
   ingredient_image_url?: string
   ingredient_description?: string
+  price?: number
 }
 
 interface Product {
@@ -206,7 +207,7 @@ export default function Home() {
     async function fetchIngredients() {
       const { data, error } = await supabase
         .from("ingredients")
-        .select("ingredient_id, name, ingredient_image_url, ingredient_description")
+        .select("ingredient_id, name, ingredient_image_url, ingredient_description, price")
         .limit(50)
     
       if (!error && data) {
@@ -215,6 +216,7 @@ export default function Home() {
           name: item.name,
           ingredient_image_url: item.ingredient_image_url,
           ingredient_description: item.ingredient_description,
+          price: item.price,
         }))
         const shuffled = transformed.sort(() => 0.5 - Math.random())
         setRecommendedIngredients(shuffled.slice(0, 4))
@@ -434,7 +436,7 @@ const handleSearch = (query: string) => {
                     description={product.ingredient_description || "Handpicked high-quality ingredient"}
                     rating={4.8}
                     purchases={Math.floor(Math.random() * 1000) + 100}
-                    price="$9.99"
+                    price={`$${(product.price || 9.99).toFixed(2)}`}
                     productType="ingredient"
                   />
                 ))}
@@ -458,7 +460,7 @@ const handleSearch = (query: string) => {
                     description={item.description}
                     rating={item.rating}
                     purchases={item.purchases}
-                    price={`$${item.price}`}
+                    price={`$${item.price.toFixed(2)}`}
                     productType="kitchenware"
                 />
               ))}
