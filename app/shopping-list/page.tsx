@@ -20,8 +20,9 @@ interface CartItem {
   product_type: string
   quantity: number
   created_at: string
+  updated_at: string
   product: {
-    id: string
+    product_id: string
     name: string
     description: string
     price: number
@@ -56,27 +57,41 @@ export default function ShoppingList() {
         }
         
         setUser(session.user)
+        console.log("Fetching cart items for user:", session.user.id)
         
-        // Fetch shopping cart data
-        const { data, error } = await supabase
+        // Try a simpler query first to debug
+        try {
+          const { data: checkData, error: checkError } = await supabase
+            .from('shopping_cart')
+            .select('*')
+            .eq('user_id', session.user.id)
+            .limit(10)
+          
+          if (checkError) {
+            console.error("Error in preliminary cart check:", checkError)
+          } else {
+            console.log("Cart check result:", checkData)
+          }
+        } catch (checkErr) {
+          console.error("Exception in cart check:", checkErr)
+        }
+        
+        // Fetch shopping cart data without the join
+        const { data: cartData, error: cartError } = await supabase
           .from('shopping_cart')
           .select(`
-            *,
-            product:product_id (
-              id, 
-              name, 
-              description, 
-              price, 
-              image_url, 
-              category,
-              unit,
-              amount
-            )
+            id,
+            user_id,
+            product_id,
+            product_type,
+            quantity,
+            created_at,
+            updated_at
           `)
           .eq('user_id', session.user.id)
         
-        if (error) {
-          console.error("Error fetching cart items:", error)
+        if (cartError) {
+          console.error("Error fetching cart items:", cartError)
           toast({
             title: "Error",
             description: "Failed to load shopping cart items",
@@ -85,7 +100,54 @@ export default function ShoppingList() {
           return
         }
         
-        setCartItems(data || [])
+        console.log("Cart items fetched successfully:", cartData ? cartData.length : 0, "items")
+        
+        if (!cartData || cartData.length === 0) {
+          setCartItems([])
+          setLoading(false)
+          return
+        }
+        
+        // Extract product IDs from cart items
+        const productIds = cartData.map(item => item.product_id)
+        
+        // Fetch product details for all products in the cart
+        const { data: productsData, error: productsError } = await supabase
+          .from('products')
+          .select('*')
+          .in('product_id', productIds)
+        
+        if (productsError) {
+          console.error("Error fetching product details:", productsError)
+          toast({
+            title: "Error",
+            description: "Failed to load product details",
+            variant: "destructive"
+          })
+          setLoading(false)
+          return
+        }
+        
+        console.log("Products fetched successfully:", productsData ? productsData.length : 0, "products")
+        
+        // Combine cart items with product details
+        const combinedCartItems = cartData.map(cartItem => {
+          const productDetails = productsData.find(product => product.product_id === cartItem.product_id) || {
+            product_id: cartItem.product_id,
+            name: "Unknown Product",
+            description: "",
+            price: 0,
+            image_url: "/placeholder.jpg",
+            category: "other"
+          }
+          
+          return {
+            ...cartItem,
+            product: productDetails
+          }
+        })
+        
+        setCartItems(combinedCartItems as CartItem[])
       } catch (error) {
         console.error("Error in fetchUserAndCartItems:", error)
       } finally {
@@ -139,16 +201,14 @@ export default function ShoppingList() {
       // First create a new product
       const { data: productData, error: productError } = await supabase
         .from('products')
-        .insert([
-          { 
-            name: newItemName, 
-            description: 'Manually added item',
-            price: 0,
-            category: 'other',
-            image_url: '/placeholder.jpg'
-          }
-        ])
-        .select()
+        .insert({
+          name: newItemName, 
+          description: 'Manually added item',
+          price: 0,
+          category: 'other',
+          image_url: '/placeholder.jpg'
+        })
+        .select('product_id, name, description, price, image_url, category')
       
       if (productError) {
         console.error("Error creating product:", productError)
@@ -162,16 +222,40 @@ export default function ShoppingList() {
       
       // Add to cart
       const newProduct = productData[0]
-      const { error: cartError } = await supabase
+      console.log("Adding new product to cart:", newProduct)
+      
+      // Check if the item already exists in the cart
+      const { data: existingItem } = await supabase
         .from('shopping_cart')
-        .insert([
-          {
+        .select('id, quantity')
+        .eq('user_id', user.id)
+        .eq('product_id', newProduct.product_id)
+        .eq('product_type', 'product')
+        .maybeSingle()
+      
+      let cartError
+      
+      if (existingItem) {
+        // Update quantity if item already exists
+        const { error } = await supabase
+          .from('shopping_cart')
+          .update({ quantity: existingItem.quantity + 1 })
+          .eq('id', existingItem.id)
+          
+        cartError = error
+      } else {
+        // Insert new item if it doesn't exist
+        const { error } = await supabase
+          .from('shopping_cart')
+          .insert({
             user_id: user.id,
-            product_id: newProduct.id,
+            product_id: newProduct.product_id,
             quantity: 1,
             product_type: 'product'
-          }
-        ])
+          })
+          
+        cartError = error
+      }
       
       if (cartError) {
         console.error("Error adding to cart:", cartError)
@@ -198,6 +282,8 @@ export default function ShoppingList() {
   // Remove item from cart
   const removeFromCart = async (itemId: string) => {
     try {
+      console.log(`Removing item with ID: ${itemId} from cart`)
+      
       const { error } = await supabase
         .from('shopping_cart')
         .delete()
@@ -230,6 +316,8 @@ export default function ShoppingList() {
     if (newQuantity < 1) return
     
     try {
+      console.log(`Updating quantity for item ${itemId} to ${newQuantity}`)
+      
       const { error } = await supabase
         .from('shopping_cart')
         .update({ quantity: newQuantity })
@@ -347,6 +435,12 @@ export default function ShoppingList() {
     }
     
     try {
+      console.log(`Deleting ${selectedItems.length} selected items`, selectedItems)
+      
+      // Handle errors in batch
+      let successCount = 0
+      let errorCount = 0
+      
       // Delete items one by one - Supabase doesn't support IN operator in delete
       for (const itemId of selectedItems) {
         const { error } = await supabase
@@ -355,25 +449,37 @@ export default function ShoppingList() {
           .eq('id', itemId)
         
         if (error) {
-          console.error("Error deleting item:", error)
-          toast({
-            title: "Error",
-            description: "Failed to delete some items",
-            variant: "destructive"
-          })
+          console.error(`Error deleting item ${itemId}:`, error)
+          errorCount++
+        } else {
+          successCount++
         }
+      }
+      
+      if (errorCount > 0) {
+        toast({
+          title: "Partial Success",
+          description: `Deleted ${successCount} items, but failed to delete ${errorCount} items`,
+          variant: "destructive"
+        })
+      } else {
+        toast({
+          title: "Success",
+          description: `Deleted ${successCount} items from your cart`,
+        })
       }
       
       // Update local state
       setCartItems(cartItems.filter(item => !selectedItems.includes(item.id)))
       setSelectedItems([])
       
-      toast({
-        title: "Success",
-        description: `Deleted ${selectedItems.length} items from your cart`,
-      })
     } catch (error) {
       console.error("Error in deleteSelectedItems:", error)
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred while deleting items",
+        variant: "destructive"
+      })
     }
   }
   
