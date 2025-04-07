@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 
 // 環境變數 - 不要在代碼中硬編碼敏感資訊
 export const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-export const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+export const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_KEY || "";
 
 // 創建 Supabase 客戶端
 export const supabase = createClient(supabaseUrl, supabaseKey);
