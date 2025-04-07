@@ -358,7 +358,7 @@ export default function UserProfile({ params }: { params: { id: string } }) {
                       <Edit className="w-4 h-4 mr-2" />
                       Edit Profile
                     </Button>
-                    <Button variant="ghost" size="sm" onClick={() => router.push("/settings")}>
+                    <Button variant="ghost" size="sm" onClick={() => router.push("/settings/security")}>
                       <Settings className="w-4 h-4" />
                     </Button>
                   </div>
