@@ -221,7 +221,7 @@ export default function SearchPageContent() {
   return (
     <main className="min-h-screen flex flex-col">
       <Navigation />
-      <div className="flex-grow p-6 max-w-6xl mx-auto">
+      <div className="flex-grow p-6 max-w-4xl mx-auto w-full">
         <h1 className="text-2xl font-semibold mb-6">Search Results for: "{query}"</h1>
         
         {error && (
@@ -233,13 +233,13 @@ export default function SearchPageContent() {
         )}
         
         {loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
             {[...Array(6)].map((_, i) => (
-              <div key={i} className="border rounded-lg p-4 space-y-3">
-                <Skeleton className="h-40 w-full rounded-md" />
-                <Skeleton className="h-4 w-3/4" />
-                <Skeleton className="h-3 w-full" />
-                <Skeleton className="h-3 w-full" />
+              <div key={i} className="border rounded-lg p-4 space-y-3 shadow-sm">
+                <Skeleton className="h-48 w-full rounded-md" />
+                <Skeleton className="h-5 w-3/4" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-full" />
                 <div className="flex justify-between pt-2">
                   <Skeleton className="h-8 w-20" />
                   <Skeleton className="h-8 w-20" />
@@ -248,7 +248,7 @@ export default function SearchPageContent() {
             ))}
           </div>
         ) : filteredRecipes.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
             {filteredRecipes.map((recipe) => (
               <RecipeCard
                 key={recipe.recipe_id}

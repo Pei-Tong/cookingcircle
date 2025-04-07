@@ -86,6 +86,8 @@ export function LikeButton({
         description: "Please sign in to like recipes",
         variant: "destructive"
       })
+      
+      alert("Please sign in to like recipes");
       return
     }
     

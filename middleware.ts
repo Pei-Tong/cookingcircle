@@ -72,49 +72,13 @@ export async function middleware(request: NextRequest) {
       console.log('[Middleware] User authenticated:', data.session.user.email || data.session.user.id)
     }
     
-    // Primary auth check - Supabase session
+    // Auth check - ONLY using Supabase session
     const isAuthenticated = !!data.session
     console.log('[Middleware] User authentication status:', isAuthenticated)
-
-    // Secondary auth check - custom cookies
-    const hasAuthCookie = request.cookies.has('user_authenticated') && 
-                         request.cookies.has('user_id')
     
-    console.log('[Middleware] Custom auth cookie present:', hasAuthCookie)
-    
-    // 使用任一種認證標記
-    const isAuthenticatedEnhanced = isAuthenticated || hasAuthCookie
-    console.log('[Middleware] Enhanced authentication status:', isAuthenticatedEnhanced)
-    
-    // 設置認證 cookie 以幫助客戶端識別狀態
-    if (isAuthenticated && data.session) {
-      // 如果有有效的 supabase 會話，設置一個輔助 cookie 幫助客戶端識別
-      response.cookies.set('user_authenticated', 'true', { 
-        path: '/',
-        maxAge: 60 * 60 * 24 * 7, // 七天
-        httpOnly: false,  // 允許客戶端 JavaScript 讀取
-        sameSite: 'lax'
-      })
-      
-      // 存儲用戶 ID 以便客戶端使用
-      response.cookies.set('user_id', data.session.user.id, {
-        path: '/',
-        maxAge: 60 * 60 * 24 * 7, // 七天
-        httpOnly: false,  // 允許客戶端 JavaScript 讀取
-        sameSite: 'lax'
-      })
-      
-      console.log('[Middleware] Set authentication cookies for client-side use')
-    } else if (!isAuthenticated) {
-      // 如果用戶未認證，清除所有認證 cookie
-      response.cookies.delete('user_authenticated')
-      response.cookies.delete('user_id')
-      console.log('[Middleware] Cleared authentication cookies')
-    }
-    
-    // Direct access to admin UI - highest priority
+    // Direct access to admin UI
     if (pathname === '/admin') {
-      if (!isAuthenticatedEnhanced) {
+      if (!isAuthenticated) {
         console.log('[Middleware] Admin route accessed by unauthenticated user, redirecting to login')
         const redirectUrl = `/login?redirectTo=${encodeURIComponent(pathname)}`
         console.log('[Middleware] Redirect URL:', redirectUrl)
@@ -128,7 +92,7 @@ export async function middleware(request: NextRequest) {
     }
 
     // If user is already logged in and trying to access login page, redirect to home or the specified redirectTo
-    if (isAuthenticatedEnhanced && pathname === '/login') {
+    if (isAuthenticated && pathname === '/login') {
       const redirectTo = request.nextUrl.searchParams.get('redirectTo') || '/'
       console.log('[Middleware] User already logged in, redirecting from login to:', redirectTo)
       try {
@@ -142,7 +106,7 @@ export async function middleware(request: NextRequest) {
     }
 
     // Protected routes - redirect to login if not authenticated
-    if (!isAuthenticatedEnhanced && 
+    if (!isAuthenticated && 
         (pathname.startsWith('/recipe-generator') || 
          pathname.startsWith('/admin') || 
          pathname.startsWith('/profile/edit'))) {
@@ -153,7 +117,7 @@ export async function middleware(request: NextRequest) {
     }
 
     // Set auth state in response headers for client-side awareness
-    response.headers.set('x-middleware-auth', isAuthenticatedEnhanced ? 'authenticated' : 'unauthenticated')
+    response.headers.set('x-middleware-auth', isAuthenticated ? 'authenticated' : 'unauthenticated')
     
     return response
   } catch (error) {

@@ -56,6 +56,8 @@ export function CollectButton({
         description: "Please sign in to collect recipes",
         variant: "destructive"
       })
+      
+      alert("Please sign in to collect recipes");
       return
     }
     

@@ -538,7 +538,7 @@ export default function UserProfile({ params }: { params: { id: string } }) {
                 </div>
                 {currentUser?.user_id === user.user_id && (
                   <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={() => router.push("/settings/profile")}>
+                    <Button variant="outline" size="sm" onClick={() => router.push(`/settings/profile`)}>
                       <Edit className="w-4 h-4 mr-2" />
                       Edit Profile
                     </Button>

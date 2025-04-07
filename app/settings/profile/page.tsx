@@ -1,8 +1,9 @@
 "use client"
 
-import { useState, useRef, ChangeEvent } from "react"
+import { useState, useRef, ChangeEvent, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
+import { User } from "@/lib/db/types"
 
 import { Navigation } from "@/components/layout/Navigation"
 import { Footer } from "@/components/layout/Footer"
@@ -38,7 +39,7 @@ import { Upload, X, Check } from "lucide-react"
 
 export default function EditProfilePage() {
   const router = useRouter()
-  const userId = "1" // Static for demo; replace with dynamic ID in production
+  const [userId, setUserId] = useState<string | null>(null)
 
   const [isLoading, setIsLoading] = useState(false)
   const [successMessage, setSuccessMessage] = useState("")
@@ -51,6 +52,59 @@ export default function EditProfilePage() {
   const [username, setUsername] = useState("")
   const [email, setEmail] = useState("")
   const [bio, setBio] = useState("")
+  
+  // Get current user data when component mounts
+  useEffect(() => {
+    async function getCurrentUser() {
+      try {
+        if (!supabase) {
+          console.error("Supabase client is not initialized")
+          return
+        }
+        
+        const { data: { session } } = await supabase.auth.getSession()
+        
+        if (session?.user) {
+          setUserId(session.user.id)
+          
+          // Fetch user profile data
+          const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('user_id', session.user.id)
+            .single()
+            
+          if (userError) {
+            console.error("Error fetching user data:", userError)
+            return
+          }
+          
+          if (userData) {
+            const user = userData as unknown as User
+            
+            // Populate form fields with user data
+            setFirstName(String(userData.first_name || ""))
+            setLastName(String(userData.last_name || ""))
+            setUsername(String(userData.username || ""))
+            setEmail(String(userData.email || ""))
+            setBio(String(userData.bio || ""))
+            
+            // Set profile image if available
+            if (userData.avatar_url || userData.profile_image) {
+              setProfileImage(String(userData.avatar_url || userData.profile_image || "/placeholder.svg"))
+            }
+          }
+        } else {
+          // No authenticated user, redirect to login
+          router.push('/login')
+        }
+      } catch (error) {
+        console.error("Error getting current user:", error)
+      }
+    }
+    
+    getCurrentUser()
+  }, [router])
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -65,6 +119,31 @@ export default function EditProfilePage() {
     setIsLoading(true)
 
     try {
+      if (!userId) {
+        throw new Error("No user ID found. Please log in again.")
+      }
+      
+      if (!supabase) {
+        throw new Error("Supabase client is not initialized")
+      }
+      
+      // Update user profile data in the database
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({
+          first_name: firstName,
+          last_name: lastName,
+          username: username,
+          bio: bio,
+          // Don't update email here as it requires additional authentication
+        })
+        .eq('user_id', userId)
+        
+      if (updateError) {
+        console.error("Error updating profile:", updateError)
+        throw new Error("Failed to update profile information.")
+      }
+
       if (selectedFile) {
         // 1. Upload the image with overwrite
         const { error: uploadError } = await supabase.storage
@@ -100,15 +179,32 @@ export default function EditProfilePage() {
         if (publicUrlData?.publicUrl) {
           const freshUrl = `${publicUrlData.publicUrl}?v=${Date.now()}`
           console.log("Updated avatar URL:", freshUrl)
-          setProfileImage(freshUrl)
+          
+          // Also update the avatar_url in the database
+          const { error: avatarUpdateError } = await supabase
+            .from('users')
+            .update({
+              avatar_url: freshUrl
+            })
+            .eq('user_id', userId)
+            
+          if (avatarUpdateError) {
+            console.error("Error updating avatar URL:", avatarUpdateError)
+          } else {
+            setProfileImage(freshUrl)
+          }
         }
       }
 
       setSuccessMessage("Profile updated successfully!")
       setTimeout(() => setSuccessMessage(""), 3000)
 
-      // Redirect to the profile page
-      router.push(`/profile/${userId}`)
+      // Redirect to the profile page with the username (preferred) or user ID
+      if (username) {
+        router.push(`/profile/${username}`)
+      } else {
+        router.push(`/profile/${userId}`)
+      }
     } catch (error) {
       console.error("Error saving profile:", error)
       alert("Something went wrong while saving.")

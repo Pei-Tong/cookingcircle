@@ -64,8 +64,9 @@ export const FollowButton = ({
         description: "You need to log in to follow users.",
         variant: "destructive"
       });
-      // 重定向到登入頁面，並設置返回地址
-      router.push(`/login?redirectTo=${encodeURIComponent(window.location.pathname)}`);
+      
+      // 只添加 alert 提示，不跳轉頁面
+      alert("Please sign in to follow users");
       return;
     }
     
