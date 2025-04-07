@@ -14,20 +14,43 @@ import {
   Minus,
   BadgeCheck,
   Eye,
+  Info,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import RecipeCard from "@/components/recipe-card"
 import { useState, useEffect } from "react"
 import { Navigation } from "@/components/layout/Navigation"
 import { Footer } from "@/components/layout/Footer"
 import { ProductCard } from "@/components/recipe/ProductCard"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { getRecipeById } from "@/lib/db/recipes"
-import type { Recipe } from "@/lib/db/types"
+import { useRecipe } from "@/hooks/use-recipe"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import Head from 'next/head'
+import { useProductsByRecipe } from "@/hooks/use-products"
+import { useSimilarRecipes } from "@/hooks/use-similar-recipes"
+import { ShareButton } from "@/components/recipe/ShareButton"
+import { CollectButton } from "@/components/recipe/CollectButton"
+import { LikeButton } from "@/components/recipe/LikeButton"
+import { ViewCounter } from "@/components/recipe/ViewCounter"
+import { useAuth } from "@/hooks/use-auth"
+import { recordRecipeView } from "@/lib/recipe-view-service"
+import { FollowButton } from "@/components/user/FollowButton"
+import { NutritionFacts } from "@/components/recipe/NutritionFacts"
+import { toast } from "@/components/ui/use-toast"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Textarea } from "@/components/ui/textarea"
 
 class Fraction {
   constructor(decimal: number) {
@@ -56,77 +79,258 @@ class Fraction {
   denominator: number
 }
 
+// Function to check if a URL is a valid image URL (not a placeholder)
+const isValidImageUrl = (url?: string | null) => {
+  if (!url) return false;
+  // If URL contains placeholder.svg consider it invalid
+  if (url.includes('placeholder.svg')) return false;
+  return true;
+};
+
+// Simplified RecipeImageGallery component (temporary placeholder)
+const RecipeImageGallery = ({ recipeId, mainImageUrl, onMainImageChange }: {
+  recipeId: string;
+  mainImageUrl?: string;
+  onMainImageChange?: (url: string) => void;
+}) => {
+  return (
+    <div className="space-y-4">
+      <h3 className="text-lg font-semibold">Recipe Image Gallery</h3>
+      <p className="text-sm text-muted-foreground">
+        Please create the <code>components/recipe/RecipeImageGallery.tsx</code> component first
+      </p>
+    </div>
+  );
+};
+
 export default function RecipeDetail({ params }: { params: { id: string } }) {
   const [servings, setServings] = useState(4)
-  const [recipe, setRecipe] = useState<Recipe | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const { recipe, ingredients, instructions, comments, loading, error } = useRecipe(params.id)
+  const [mainImageUrl, setMainImageUrl] = useState<string | null>(null)
+  const { products, loading: productsLoading } = useProductsByRecipe(params.id)
+  const { similarRecipes, loading: recipesLoading } = useSimilarRecipes(params.id)
+  const { user } = useAuth()
+  const [commentOpen, setCommentOpen] = useState(false)
+  const [commentText, setCommentText] = useState("")
 
+  // When recipe data is loaded, initialize the main image URL
   useEffect(() => {
-    const fetchRecipe = async () => {
-      try {
-        const recipeData = await getRecipeById(params.id)
-        setRecipe(recipeData)
-      } catch (err: any) {
-        setError(err.message || "Failed to load recipe")
-      } finally {
-        setLoading(false)
-      }
+    if (recipe?.image_url) {
+      setMainImageUrl(recipe.image_url)
     }
+  }, [recipe])
 
-    fetchRecipe()
-  }, [params.id])
+  // Main image change handler
+  const handleMainImageChange = (url: string) => {
+    setMainImageUrl(url)
+  }
 
+  // Record recipe view
+  useEffect(() => {
+    if (!user?.id) return;
+    
+    const recordView = async () => {
+      try {
+        await recordRecipeView(params.id, user.id);
+      } catch (error) {
+        console.error('Failed to record recipe view:', error);
+      }
+    };
+    
+    recordView();
+  }, [params.id, user?.id]);
+
+  // If data is still loading
   if (loading) {
     return (
       <>
         <Navigation />
         <main className="max-w-[1200px] mx-auto px-4 py-6">
-          <div>Loading...</div>
+          <div className="mb-6">
+            <Skeleton className="h-10 w-3/4 mb-2" />
+            <Skeleton className="h-4 w-full mb-4" />
+            <div className="flex gap-2 mb-4">
+              <Skeleton className="h-6 w-20" />
+              <Skeleton className="h-6 w-20" />
+            </div>
+          </div>
+          <Skeleton className="aspect-video w-full rounded-lg mb-8" />
         </main>
         <Footer />
       </>
-    )
+    );
   }
 
+  // If an error occurs or the recipe is not found
   if (error || !recipe) {
     return (
       <>
         <Navigation />
         <main className="max-w-[1200px] mx-auto px-4 py-6">
-          <div>{error || "Recipe not found"}</div>
+          <Alert variant="destructive">
+            <AlertDescription>
+              {error || "Recipe not found"}
+            </AlertDescription>
+          </Alert>
         </main>
         <Footer />
       </>
-    )
+    );
   }
 
-  const calculateAmount = (baseAmount: string, originalServings = 4) => {
+  const calculateAmount = (baseAmount: string, originalServings = recipe.servings) => {
     if (!baseAmount) return baseAmount
 
-    // Handle fractions
+    // 處理混合分數，例如 "2 1/4"
     let baseNumeric: number
-    if (baseAmount.includes("/")) {
+    if (baseAmount.includes(" ") && baseAmount.includes("/")) {
+      // 混合分數 (例如 "2 1/4")
+      const [whole, fraction] = baseAmount.split(" ")
+      const [num, denom] = fraction.split("/")
+      baseNumeric = Number(whole) + Number(num) / Number(denom)
+    } else if (baseAmount.includes("/")) {
+      // 簡單分數 (例如 "1/4")
       const [num, denom] = baseAmount.split("/")
       baseNumeric = Number(num) / Number(denom)
     } else {
+      // 普通數字
       baseNumeric = Number(baseAmount)
     }
 
-    // Calculate new amount
+    // 如果轉換結果是NaN，則直接返回原始字符串
+    if (isNaN(baseNumeric)) return baseAmount
+    
+    // 計算新數量
     const newAmount = (baseNumeric * servings) / originalServings
 
-    // Format the result
+    // 格式化結果
     let formattedAmount: string
     if (newAmount < 1 && newAmount > 0) {
-      // Convert to fraction if less than 1
+      // 小於1時轉換為分數
       const fraction = new Fraction(newAmount)
       formattedAmount = `${fraction.numerator}/${fraction.denominator}`
+    } else if (newAmount % 1 === 0) {
+      // 整數
+      formattedAmount = newAmount.toFixed(0)
     } else {
-      formattedAmount = newAmount.toFixed(newAmount % 1 === 0 ? 0 : 2)
+      // 混合數，顯示為 "2 1/4" 格式
+      const whole = Math.floor(newAmount)
+      const remainder = newAmount - whole
+      if (remainder > 0) {
+        const fraction = new Fraction(remainder)
+        formattedAmount = `${whole} ${fraction.numerator}/${fraction.denominator}`
+      } else {
+        formattedAmount = whole.toString()
+      }
     }
 
     return formattedAmount
+  }
+
+  // Use this function to determine which image URL to display
+  const getDisplayImageUrl = (): string => {
+    // If there's a valid mainImageUrl, use it
+    if (isValidImageUrl(mainImageUrl)) return mainImageUrl as string;
+    // If there's a valid recipe?.image_url, use it
+    if (isValidImageUrl(recipe?.image_url)) return recipe.image_url;
+    // Otherwise use a placeholder image
+    return "/placeholder.svg?height=600&width=1200";
+  };
+
+  // 購物車功能處理
+  const handleAddToCart = (ingredient: any) => {
+    if (!user) {
+      toast({
+        title: "Please Log in",
+        description: "You need to log in to add items to your shopping cart.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // 這裡之後可以實現真正的添加到購物車功能
+    toast({
+      title: "Add To Cart Successfully!",
+      description: `${ingredient.name} has been added to your shopping cart.`,
+    });
+  }
+
+  // 產品購物車功能處理
+  const handleAddProductToCart = (product: any) => {
+    if (!user) {
+      toast({
+        title: "Please Log in",
+        description: "You need to log in to add items to your shopping cart.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // 這裡之後可以實現真正的添加到購物車功能
+    toast({
+      title: "Add To Cart Successfully!",
+      description: `${product.name} has been added to your shopping cart.`,
+    });
+  }
+
+  // 添加所有食材到購物車
+  const handleAddAllToCart = () => {
+    if (!user) {
+      toast({
+        title: "Please Log in",
+        description: "You need to log in to add items to your shopping list.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // 這裡實現添加所有食材到購物清單
+    toast({
+      title: "Add To Cart Successfully!",
+      description: "All ingredients have been added to your shopping list.",
+    });
+  }
+
+  // 處理評論提交
+  const handleCommentSubmit = () => {
+    if (!commentText.trim()) {
+      toast({
+        title: "Cannot Submit Empty Comment",
+        description: "Please enter some text for your comment.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // TODO: 實際發送評論到後端
+    // 這裡之後可以實現實際的評論提交功能
+    
+    toast({
+      title: "Comment Posted Successfully!",
+      description: "Your comment has been published.",
+    });
+    
+    // 清空評論內容並關閉對話框
+    setCommentText("");
+    setCommentOpen(false);
+  }
+
+  // 處理食譜收藏功能
+  const handleCollectRecipe = (recipeId: string, title: string) => {
+    if (!user) {
+      toast({
+        title: "Please Log in",
+        description: "You need to log in to collect recipes.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // TODO: 實際實現收藏功能到後端
+    toast({
+      title: "Recipe Collected!",
+      description: `${title} has been added to your collection.`,
+    });
   }
 
   return (
@@ -136,64 +340,76 @@ export default function RecipeDetail({ params }: { params: { id: string } }) {
         <div className="grid md:grid-cols-3 gap-8">
           <div className="md:col-span-2">
             <div className="mb-6">
-              <h1 className="text-3xl font-bold mb-2">Homemade Margherita Pizza</h1>
+              <h1 className="text-3xl font-bold mb-2">{recipe.title}</h1>
               <p className="text-muted-foreground mb-4">
-                A classic Italian pizza with fresh mozzarella, tomatoes, and basil on a crispy homemade crust.
+                {recipe.description}
               </p>
               <div className="flex flex-wrap gap-2 mb-4">
-                <Badge>Italian</Badge>
-                <Badge>Vegetarian</Badge>
-                <Badge variant="outline">30 min</Badge>
+                {recipe.tags && recipe.tags.length > 0 ? (
+                  // If there are tag data, display them
+                  recipe.tags.map((tag, index) => (
+                    <Badge key={index}>{tag}</Badge>
+                  ))
+                ) : (
+                  // If there are no tags, display cooking time
+                  <Badge variant="outline">{recipe.cooking_time} min</Badge>
+                )}
               </div>
               <div className="flex items-center gap-4 mb-6">
-                <Link href={`/profile/${recipe.user?.username || recipe.user_id}`} className="flex items-center gap-2">
+                <Link href={`/profile/${recipe.user_id}`} className="flex items-center gap-2">
                   <Avatar className="h-8 w-8">
-                    <AvatarImage src={recipe.user?.profile_image || "/placeholder.svg"} alt={recipe.user?.username || "Chef"} />
-                    <AvatarFallback>{recipe.user?.username?.slice(0, 2).toUpperCase() || "??"}</AvatarFallback>
+                    <AvatarImage 
+                      src={recipe.users?.profile_image || "/placeholder.svg"} 
+                      alt={recipe.users?.username || "chef"} 
+                    />
+                    <AvatarFallback>{recipe.users?.username?.charAt(0) || "U"}</AvatarFallback>
                   </Avatar>
                   <div className="flex items-center gap-2">
-                    <span className="font-medium">{recipe.user?.username || "Unknown Chef"}</span>
+                    <span className="font-medium">{recipe.users?.username || "anonymous"}</span>
                     <TooltipProvider>
                       <Tooltip>
-                        <TooltipTrigger asChild>
-                          <div className="inline-flex items-center justify-center rounded-full bg-blue-100 p-0.5">
-                            <BadgeCheck className="h-4 w-4 text-blue-500" />
-                          </div>
+                        <TooltipTrigger>
+                          <BadgeCheck className="w-5 h-5 text-blue-500" />
                         </TooltipTrigger>
                         <TooltipContent>
                           <p>Verified Chef</p>
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
-                    <span
-                      className="text-xs text-muted-foreground hover:text-primary cursor-pointer transition-colors"
-                      title={`Follow ${recipe.user?.username || "this chef"}`}
-                    >
-                      • Follow
-                    </span>
                   </div>
                 </Link>
-                <Button variant="ghost" size="sm" className="gap-1">
-                  <Heart className="h-4 w-4" />
-                  <span>128</span>
-                </Button>
-                <Button variant="ghost" size="sm" className="gap-1">
-                  <Eye className="h-4 w-4" />
-                  <span>1.2k</span>
-                </Button>
-                <Button variant="ghost" size="sm">
-                  <Bookmark className="h-4 w-4" />
-                </Button>
-                <Button variant="ghost" size="sm">
-                  <Share2 className="h-4 w-4" />
-                </Button>
+                {user && user.id !== recipe.user_id && (
+                  <FollowButton 
+                    userId={user.id} 
+                    profileId={recipe.user_id}
+                    variant="outline"
+                    size="sm"
+                  />
+                )}
+                <LikeButton
+                  recipeId={params.id}
+                  userId={user?.id}
+                  initialCount={recipe?.likes_count || 0}
+                />
+                <ViewCounter
+                  recipeId={params.id}
+                  initialCount={recipe?.views_count || 0}
+                />
+                <CollectButton
+                  recipeId={params.id}
+                  userId={user?.id}
+                />
+                <ShareButton 
+                  title={recipe.title} 
+                  description={recipe.description}
+                />
               </div>
             </div>
 
             <div className="relative aspect-video mb-8 rounded-lg overflow-hidden">
               <Image
-                src="/placeholder.svg?height=600&width=1200"
-                alt="Margherita Pizza"
+                src={getDisplayImageUrl()}
+                alt={recipe?.title || "Recipe Image"}
                 fill
                 className="object-cover"
               />
@@ -224,7 +440,7 @@ export default function RecipeDetail({ params }: { params: { id: string } }) {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">Servings:</span>
+                <span className="text-sm font-medium">Adjust recipe for:</span>
                 <Button
                   variant="outline"
                   size="icon"
@@ -234,22 +450,33 @@ export default function RecipeDetail({ params }: { params: { id: string } }) {
                 >
                   <Minus className="h-3 w-3" />
                 </Button>
-                <span className="text-sm font-medium">{servings}</span>
+                <span className="text-sm font-medium">{servings} servings</span>
                 <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setServings(servings + 1)}>
                   <Plus className="h-3 w-3" />
                 </Button>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Info className="h-4 w-4 ml-1 text-muted-foreground" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="text-xs max-w-60">Adjusts ingredient quantities only. Nutrition facts are always shown per single serving.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
             </div>
 
             <Tabs defaultValue="ingredients" className="mb-10">
-              <TabsList className="grid w-full grid-cols-2">
+              <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="ingredients">Ingredients</TabsTrigger>
                 <TabsTrigger value="instructions">Instructions</TabsTrigger>
+                <TabsTrigger value="nutrition">Nutrition Facts</TabsTrigger>
               </TabsList>
               <TabsContent value="ingredients" className="pt-6">
                 <div className="flex justify-between items-center mb-4">
                   <h2 className="text-xl font-semibold">Ingredients</h2>
-                  <Button>
+                  <Button onClick={handleAddAllToCart}>
                     <ShoppingCart className="mr-2 h-4 w-4" />
                     Add All to Shopping List
                   </Button>
@@ -268,118 +495,109 @@ export default function RecipeDetail({ params }: { params: { id: string } }) {
                     </div>
                   </div>
 
-                  {/* Ingredients List */}
-                  <ul className="divide-y">
-                    {[
-                      { name: "All-purpose flour", amount: "2 1/4", unit: "cups", additional: "(280g)" },
-                      { name: "Salt", amount: "1", unit: "teaspoon" },
-                      { name: "Instant yeast", amount: "1", unit: "teaspoon" },
-                      { name: "Warm water", amount: "3/4", unit: "cup", additional: "(180ml)" },
-                      { name: "Olive oil", amount: "1", unit: "tablespoon", note: "plus more for brushing" },
-                      { name: "Crushed tomatoes", amount: "1", unit: "can", additional: "(14oz)" },
-                      { name: "Garlic", amount: "2", unit: "cloves", note: "minced" },
-                      { name: "Dried oregano", amount: "1", unit: "teaspoon" },
-                      { name: "Fresh mozzarella cheese", amount: "8", unit: "oz", note: "sliced" },
-                      { name: "Fresh basil leaves", amount: "", unit: "to taste" },
-                      { name: "Salt and pepper", amount: "", unit: "to taste" },
-                    ].map((ingredient, index) => (
-                      <li key={index} className="flex items-center justify-between p-3 hover:bg-gray-50">
+                  {/* Ingredient rows */}
+                  <div>
+                    {ingredients.map((ingredient, index) => (
+                      <div key={index} className="p-3 border-b last:border-b-0 flex items-center justify-between">
                         <div className="flex items-center gap-6">
-                          <span className="w-48 font-medium">{ingredient.name}</span>
-                          <span className="w-16 text-center">{calculateAmount(ingredient.amount)}</span>
-                          <span className="w-24">{ingredient.unit}</span>
-                          {(ingredient.additional || ingredient.note) && (
-                            <span className="text-gray-500 text-sm">
-                              {ingredient.additional} {ingredient.note}
-                            </span>
-                          )}
+                          <span className="w-48 text-sm">{ingredient.name}</span>
+                          <span className="w-16 text-center text-sm">{calculateAmount(ingredient.quantity)}</span>
+                          <span className="w-24 text-sm">{ingredient.unit}</span>
+                          <span className="text-sm text-muted-foreground">{ingredient.notes}</span>
                         </div>
-                        <Button variant="ghost" size="sm">
+                        <Button variant="ghost" size="sm" className="p-1 h-8 w-8" onClick={() => handleAddToCart(ingredient)}>
                           <ShoppingCart className="h-4 w-4" />
                         </Button>
-                      </li>
+                      </div>
                     ))}
-                  </ul>
-
-                  {/* Footer */}
-                  <div className="bg-gray-50 p-3 border-t">
-                    <div className="flex items-center justify-between text-sm text-gray-600">
-                      <span>Total Ingredients: 11</span>
-                      <span>All measurements are Canadian Standard</span>
-                    </div>
                   </div>
                 </div>
               </TabsContent>
               <TabsContent value="instructions" className="pt-6">
                 <h2 className="text-xl font-semibold mb-4">Instructions</h2>
-                <ol className="space-y-6">
-                  {[
-                    "In a large bowl, mix flour, salt, and yeast. Add warm water and olive oil, and stir until a dough forms.",
-                    "Knead the dough on a floured surface for about 5 minutes until smooth and elastic. Place in an oiled bowl, cover, and let rise for 1 hour.",
-                    "Preheat your oven to 475°F (245°C) with a pizza stone or baking sheet inside.",
-                    "Mix crushed tomatoes with minced garlic, dried oregano, salt, and pepper to make the sauce.",
-                    "Punch down the dough and roll it out on a floured surface to your desired thickness.",
-                    "Transfer the dough to a piece of parchment paper. Spread the tomato sauce evenly, leaving a border for the crust.",
-                    "Arrange mozzarella slices on top of the sauce.",
-                    "Carefully transfer the pizza with the parchment paper onto the preheated stone or baking sheet.",
-                    "Bake for 12-15 minutes until the crust is golden and the cheese is bubbly.",
-                    "Remove from the oven, top with fresh basil leaves, drizzle with olive oil, and serve hot.",
-                  ].map((step, index) => (
-                    <li key={index} className="flex">
-                      <span className="flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-full bg-primary text-primary-foreground font-medium mr-3">
-                        {index + 1}
-                      </span>
-                      <p>{step}</p>
-                    </li>
+                <div className="space-y-6">
+                  {instructions.map((instruction, index) => (
+                    <div key={index} className="flex gap-4">
+                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                        <span className="text-primary font-medium">{instruction.step_number || index + 1}</span>
+                      </div>
+                      <div>
+                        <p className="text-sm">{instruction.description}</p>
+                      </div>
+                    </div>
                   ))}
-                </ol>
+                </div>
+              </TabsContent>
+              <TabsContent value="nutrition" className="pt-6">
+                <h2 className="text-xl font-semibold mb-4">Nutrition Facts</h2>
+                <div className="border rounded-lg p-6 bg-white">
+                  <NutritionFacts recipeId={params.id} />
+                </div>
+                <div className="mt-4 text-xs text-muted-foreground">
+                  <p>* Nutritional information is for reference only and may vary based on ingredients and cooking methods.</p>
+                </div>
               </TabsContent>
             </Tabs>
 
             {/* Comments Section */}
             <div className="mb-10">
               <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-semibold">Comments (12)</h2>
-                <Button showCommentDialog>
+                <h2 className="text-xl font-semibold">Comments ({comments.length})</h2>
+                <Button onClick={() => {
+                  if (!user) {
+                    toast({
+                      title: "Please Log in",
+                      description: "You need to log in before commenting.",
+                      variant: "destructive"
+                    });
+                    return;
+                  }
+                  
+                  // 如果用戶已登入，打開評論對話框
+                  setCommentOpen(true);
+                }}>
                   <MessageCircle className="mr-2 h-4 w-4" />
                   Add Comment
                 </Button>
               </div>
+              
+              {/* 評論對話框 */}
+              <Dialog open={commentOpen} onOpenChange={setCommentOpen}>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Post a Comment</DialogTitle>
+                    <DialogDescription>
+                      Share your thoughts and opinions about this recipe.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <Textarea
+                    value={commentText}
+                    onChange={(e) => setCommentText(e.target.value)}
+                    placeholder="Write your comment..."
+                    className="min-h-[120px]"
+                  />
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setCommentOpen(false)}>Cancel</Button>
+                    <Button onClick={handleCommentSubmit}>Post Comment</Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+
               <div className="space-y-6">
-                {[
-                  {
-                    name: "Julia Chen",
-                    avatar: "/placeholder.svg",
-                    date: "2 days ago",
-                    comment:
-                      "I made this last night and it was absolutely delicious! The crust came out perfectly crispy. I added some red pepper flakes for a bit of heat.",
-                  },
-                  {
-                    name: "Mark Johnson",
-                    avatar: "/placeholder.svg",
-                    date: "1 week ago",
-                    comment:
-                      "Great recipe! I substituted the all-purpose flour with 00 flour and it made the crust even better. Will definitely make again.",
-                  },
-                  {
-                    name: "Sarah Williams",
-                    avatar: "/placeholder.svg",
-                    date: "2 weeks ago",
-                    comment:
-                      "My family loved this pizza! It was so much better than takeout. I'm wondering if I can prepare the dough ahead of time and refrigerate it?",
-                  },
-                ].map((comment, index) => (
+                {comments.map((comment, index) => (
                   <div key={index} className="flex gap-4">
                     <Avatar>
-                      <AvatarImage src={comment.avatar} alt={comment.name} />
-                      <AvatarFallback>{comment.name.charAt(0)}</AvatarFallback>
+                      <AvatarImage src={comment.user?.profile_image || "/placeholder.svg"} alt={comment.user?.username || "User"} />
+                      <AvatarFallback>{(comment.user?.username || "U").charAt(0)}</AvatarFallback>
                     </Avatar>
                     <div className="flex-1">
                       <div className="flex items-center justify-between mb-1">
-                        <h4 className="font-medium">{comment.name}</h4>
-                        <span className="text-xs text-muted-foreground">{comment.date}</span>
+                        <h4 className="font-medium">{comment.user?.username || "Anonymous"}</h4>
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(comment.created_at).toLocaleDateString()}
+                        </span>
                       </div>
-                      <p className="text-sm">{comment.comment}</p>
+                      <p className="text-sm">{comment.text}</p>
                     </div>
                   </div>
                 ))}
@@ -387,71 +605,40 @@ export default function RecipeDetail({ params }: { params: { id: string } }) {
             </div>
           </div>
 
-          <div className="md:col-span-1 md:pt-[200px]">
-            <Card className="mb-6">
-              <CardContent className="p-6">
-                <h3 className="text-lg font-semibold mb-4">Nutrition Facts</h3>
-                <div className="space-y-2">
-                  <div className="flex py-1 border-b">
-                    <span className="flex-1">Calories</span>
-                    <span className="w-12 text-right font-medium">320</span>
-                    <span className="w-8 text-right text-gray-500 ml-2">kcal</span>
-                  </div>
-                  <div className="flex py-1 border-b">
-                    <span className="flex-1">Protein</span>
-                    <span className="w-12 text-right font-medium">12</span>
-                    <span className="w-8 text-right text-gray-500 ml-2">g</span>
-                  </div>
-                  <div className="flex py-1 border-b">
-                    <span className="flex-1">Carbohydrates</span>
-                    <span className="w-12 text-right font-medium">42</span>
-                    <span className="w-8 text-right text-gray-500 ml-2">g</span>
-                  </div>
-                  <div className="flex py-1 border-b">
-                    <span className="flex-1">Fat</span>
-                    <span className="w-12 text-right font-medium">10</span>
-                    <span className="w-8 text-right text-gray-500 ml-2">g</span>
-                  </div>
-                  <div className="flex py-1">
-                    <span className="flex-1">Fiber</span>
-                    <span className="w-12 text-right font-medium">2</span>
-                    <span className="w-8 text-right text-gray-500 ml-2">g</span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
+          <div className="md:col-span-1">
             <Card className="mb-6">
               <CardContent className="p-6">
                 <h3 className="text-lg font-semibold mb-4">Featured Products</h3>
                 <div className="space-y-4">
-                  <ProductCard
-                    image="/placeholder.svg?height=200&width=200"
-                    name="Professional Pizza Stone"
-                    description="Heavy-duty ceramic stone for perfectly crispy pizza crust"
-                    rating={4.8}
-                    purchases={1234}
-                    price="$39.99"
-                    onAddToCart={() => console.log("Added pizza stone to cart")}
-                  />
-                  <ProductCard
-                    image="/placeholder.svg?height=200&width=200"
-                    name="Italian '00' Pizza Flour"
-                    description="Premium fine-ground flour for authentic Neapolitan pizza"
-                    rating={4.9}
-                    purchases={2156}
-                    price="$12.99"
-                    onAddToCart={() => console.log("Added flour to cart")}
-                  />
-                  <ProductCard
-                    image="/placeholder.svg?height=200&width=200"
-                    name="Pizza Cutter Wheel"
-                    description="Professional stainless steel pizza cutter for clean slices"
-                    rating={4.7}
-                    purchases={876}
-                    price="$14.99"
-                    onAddToCart={() => console.log("Added pizza cutter to cart")}
-                  />
+                  {productsLoading ? (
+                    // Product loading state
+                    Array(3).fill(0).map((_, i) => (
+                      <div key={i} className="space-y-2">
+                        <Skeleton className="h-24 w-full rounded-md" />
+                        <Skeleton className="h-4 w-2/3" />
+                        <Skeleton className="h-3 w-full" />
+                      </div>
+                    ))
+                  ) : products.length > 0 ? (
+                    // Display products retrieved from database
+                    products.map((product) => (
+                      <ProductCard
+                        key={product.product_id}
+                        image={product.image_url || "/placeholder.svg?height=200&width=200"}
+                        name={product.name}
+                        description={product.description}
+                        rating={product.rating || 4.0}
+                        purchases={product.purchases || 0}
+                        price={`$${product.price.toFixed(2)}`}
+                        onAddToCart={() => handleAddProductToCart(product)}
+                      />
+                    ))
+                  ) : (
+                    // Information to display when there are no products
+                    <p className="text-center text-muted-foreground py-4">
+                      No related products found.
+                    </p>
+                  )}
                 </div>
                 <Button variant="outline" className="w-full mt-4">
                   View All Products
@@ -468,24 +655,36 @@ export default function RecipeDetail({ params }: { params: { id: string } }) {
               </div>
 
               <div className="space-y-4">
-                <RecipeCard
-                  id="10"
-                  title="Focaccia Bread"
-                  image="/placeholder.svg?height=200&width=300"
-                  description="Italian flatbread with olive oil, herbs and sea salt"
-                  tags={["Italian", "Bread"]}
-                  likes={87}
-                  views={756}
-                />
-                <RecipeCard
-                  id="11"
-                  title="Caprese Salad"
-                  image="/placeholder.svg?height=200&width=300"
-                  description="Fresh tomatoes, mozzarella and basil with balsamic glaze"
-                  tags={["Italian", "Salad"]}
-                  likes={65}
-                  views={543}
-                />
+                {recipesLoading ? (
+                  // Recipe loading state
+                  Array(2).fill(0).map((_, i) => (
+                    <div key={i} className="space-y-2">
+                      <Skeleton className="aspect-video w-full rounded-md" />
+                      <Skeleton className="h-4 w-2/3" />
+                      <Skeleton className="h-3 w-full" />
+                    </div>
+                  ))
+                ) : similarRecipes && similarRecipes.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+                    {similarRecipes.map((recipe) => (
+                      <RecipeCard
+                        key={recipe.recipe_id}
+                        recipe_id={recipe.recipe_id}
+                        title={recipe.title}
+                        description={recipe.description}
+                        image_url={recipe.image_url}
+                        tags={recipe.tags || []}
+                        likes_count={recipe.likes_count || 0}
+                        views_count={recipe.views_count || 0}
+                        username={recipe.users?.username || "Anonymous"}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center text-gray-500">
+                    No similar recipes found
+                  </div>
+                )}
               </div>
             </div>
           </div>

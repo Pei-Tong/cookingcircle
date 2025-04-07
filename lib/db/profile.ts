@@ -169,16 +169,52 @@ export async function toggleFollow(currentUserId: string, targetUserId: string):
     const isFollowing = await checkIsFollowing(currentUserId, targetUserId);
 
     if (isFollowing) {
-      const { error } = await supabase
+      // Unfollow logic
+      const { error: deleteError } = await supabase
         .from('user_follows')
         .delete()
         .eq('follower_id', currentUserId)
         .eq('following_id', targetUserId);
 
-      if (error) throw error;
+      if (deleteError) throw deleteError;
+
+      // Get current counts
+      const { data: targetUser } = await supabase
+        .from('users')
+        .select('followers_count')
+        .eq('user_id', targetUserId)
+        .single();
+
+      const { data: currentUser } = await supabase
+        .from('users')
+        .select('following_count')
+        .eq('user_id', currentUserId)
+        .single();
+
+      // Update follower count for target user
+      const { error: targetError } = await supabase
+        .from('users')
+        .update({ 
+          followers_count: (targetUser?.followers_count || 1) - 1 
+        })
+        .eq('user_id', targetUserId);
+
+      if (targetError) throw targetError;
+
+      // Update following count for current user
+      const { error: currentError } = await supabase
+        .from('users')
+        .update({ 
+          following_count: (currentUser?.following_count || 1) - 1 
+        })
+        .eq('user_id', currentUserId);
+
+      if (currentError) throw currentError;
+
       return false;
     } else {
-      const { error } = await supabase
+      // Follow logic
+      const { error: insertError } = await supabase
         .from('user_follows')
         .insert([
           {
@@ -187,7 +223,41 @@ export async function toggleFollow(currentUserId: string, targetUserId: string):
           }
         ]);
 
-      if (error) throw error;
+      if (insertError) throw insertError;
+
+      // Get current counts
+      const { data: targetUser } = await supabase
+        .from('users')
+        .select('followers_count')
+        .eq('user_id', targetUserId)
+        .single();
+
+      const { data: currentUser } = await supabase
+        .from('users')
+        .select('following_count')
+        .eq('user_id', currentUserId)
+        .single();
+
+      // Update follower count for target user
+      const { error: targetError } = await supabase
+        .from('users')
+        .update({ 
+          followers_count: (targetUser?.followers_count || 0) + 1 
+        })
+        .eq('user_id', targetUserId);
+
+      if (targetError) throw targetError;
+
+      // Update following count for current user
+      const { error: currentError } = await supabase
+        .from('users')
+        .update({ 
+          following_count: (currentUser?.following_count || 0) + 1 
+        })
+        .eq('user_id', currentUserId);
+
+      if (currentError) throw currentError;
+
       return true;
     }
   } catch (error) {

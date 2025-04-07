@@ -1,33 +1,22 @@
 "use client"
 
-import { use, useEffect, useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { getUserProfile, getFollowerCount, getFollowingCount, checkIsFollowing, toggleFollow } from "@/lib/db/profile"
-import type { User, UserWithRecipes, Recipe } from "@/lib/db/types"
+import type { User, Recipe } from "@/lib/db/types"
 import { getRecipes } from "@/lib/db/recipes"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import RecipeCard from "@/components/recipe-card"
-import { Edit, Grid, Bookmark, Heart, BadgeCheck } from "lucide-react"
+import { RecipeCard } from "@/components/recipe/RecipeCard"
+import { Edit, Settings, Grid, Bookmark, Heart, Loader2, BadgeCheck } from "lucide-react"
 import { Navigation } from "@/components/layout/Navigation"
 import { Footer } from "@/components/layout/Footer"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { supabase } from "@/lib/supabase"
+import { supabase } from "@/lib/supabaseClient"
 
 interface FilterPillProps {
   label: string
@@ -50,30 +39,56 @@ function FilterPill({ label, active, onClick }: FilterPillProps) {
   )
 }
 
-interface ProfilePageProps {
-  params: Promise<{ id: string }>
+interface RecipeCardData {
+  id: string
+  title: string
+  description: string
+  image: string
+  tags: string[]
+  likes: number
+  views: number
+  user_id: string
+  username: string
 }
 
-interface UserData {
-  user_id: string;
-  username: string;
+interface RecipeWithUser {
+  recipe_id: string
+  title: string
+  description: string
+  image_url: string
+  tags: string[]
+  likes_count: number
+  views_count: number
+  user_id: string
+  user: {
+    username: string
+  }
 }
 
-export default function UserProfile({ params }: ProfilePageProps) {
+interface SavedRecipeData {
+  recipe_id: string
+  recipes: RecipeWithUser
+}
+
+interface LikedRecipeData {
+  recipe_id: string
+  recipes: RecipeWithUser
+}
+
+export default function UserProfile({ params }: { params: { id: string } }) {
   const router = useRouter()
-  const { id } = use(params)
-  const [profile, setProfile] = useState<UserWithRecipes | null>(null)
-  const [recipes, setRecipes] = useState<Recipe[]>([])
-  const [loading, setLoading] = useState<boolean>(true)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
+  const [user, setUser] = useState<User | null>(null)
+  const [currentUser, setCurrentUser] = useState<User | null>(null)
+  const [userRecipes, setUserRecipes] = useState<Recipe[]>([])
+  const [savedRecipes, setSavedRecipes] = useState<RecipeCardData[]>([])
+  const [likedRecipes, setLikedRecipes] = useState<RecipeCardData[]>([])
   const [followerCount, setFollowerCount] = useState<number>(0)
   const [followingCount, setFollowingCount] = useState<number>(0)
   const [isFollowing, setIsFollowing] = useState<boolean>(false)
-  const [sortOption, setSortOption] = useState<string>("newest")
-
-  const [savedRecipes, setSavedRecipes] = useState<Recipe[]>([])
-  const [likedRecipes, setLikedRecipes] = useState<Recipe[]>([])
+  const [sortOption, setSortOption] = useState<string>("recent")
+  const [activeFilter, setActiveFilter] = useState("All")
 
   const filterCategories = [
     "All", "Main Course", "Appetizers", "Desserts", "Vegetarian",
@@ -81,138 +96,179 @@ export default function UserProfile({ params }: ProfilePageProps) {
     "Under 30 mins", "Gluten-Free",
   ]
 
+  // Get current user and profile user
   useEffect(() => {
-    const fetchProfileAndRecipes = async () => {
-      if (!id) {
-        setError("Invalid user profile ID.")
-        setLoading(false)
-        return
-      }
-
+    async function fetchUsers() {
       setLoading(true)
       setError(null)
-
+      
       try {
-        // 先檢查 ID 是否為有效的 UUID
-        const isValidUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
-        
-        let userId = id;
-        
-        if (!isValidUUID) {
-          // 解碼 URL 編碼的用戶名
-          const decodedUsername = decodeURIComponent(id);
-          console.log('Attempting to find user by username:', decodedUsername);
-          
-          // 如果不是 UUID，嘗試通過用戶名查找用戶
-          const { data: userData, error: userError } = await supabase!
+        // Get current logged in user
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.user) {
+          const { data: currentUserData } = await supabase
             .from('users')
-            .select('user_id, username')
-            .or(`username.eq.${decodedUsername},username.ilike.${decodedUsername}`)
-            .maybeSingle();
-
-          if (userError) {
-            console.error('User lookup error:', userError);
-            throw new Error(`Failed to find user: ${userError.message}`);
-          }
-
-          if (!userData) {
-            console.error('No user found with username:', decodedUsername);
-            throw new Error(`User "${decodedUsername}" not found`);
-          }
-
-          const typedUserData = userData as UserData;
-          userId = typedUserData.user_id;
-          console.log('Found user:', typedUserData);
+            .select('*')
+            .eq('user_id', session.user.id)
+            .single()
+            
+          setCurrentUser(currentUserData)
+        }
+        
+        // Get profile user (from URL parameter)
+        let userData
+        
+        // First try to find by username
+        const { data: usernameMatch } = await supabase
+          .from('users')
+          .select('*')
+          .eq('username', decodeURIComponent(params.id))
+          .single()
+          
+        if (usernameMatch) {
+          userData = usernameMatch
         } else {
-          console.log('Using UUID directly:', id);
+          // If not found by username, try by user_id
+          const { data: userIdMatch } = await supabase
+            .from('users')
+            .select('*')
+            .eq('user_id', params.id)
+            .single()
+            
+          userData = userIdMatch
         }
-
-        try {
-          console.log('Fetching profile data for user ID:', userId);
-          // 使用找到的或提供的 user_id 繼續查詢
-          const [profileData, recipesData] = await Promise.all([
-            getUserProfile(userId),
-            getRecipes(10, userId)
-          ]);
-
-          if (!profileData) {
-            console.error('Profile not found for user ID:', userId);
-            throw new Error('User profile not found');
+        
+        if (userData) {
+          setUser(userData)
+          await fetchUserContent(userData.user_id)
+          
+          // Fetch follower and following counts
+          const [followers, following] = await Promise.all([
+            getFollowerCount(userData.user_id),
+            getFollowingCount(userData.user_id)
+          ])
+          
+          setFollowerCount(followers)
+          setFollowingCount(following)
+          
+          // Check if current user is following this profile
+          if (currentUser) {
+            const isFollowing = await checkIsFollowing(currentUser.user_id, userData.user_id)
+            setIsFollowing(isFollowing)
           }
-
-          console.log('Successfully fetched profile data:', {
-            userId: profileData.user_id,
-            username: profileData.username,
-            recipesCount: recipesData.length
-          });
-
-          // 獲取關注者和被關注者數量
-          const [followerCountData, followingCountData, isFollowingData] = await Promise.all([
-            getFollowerCount(userId),
-            getFollowingCount(userId),
-            checkIsFollowing(userId, userId)
-          ]);
-
-          console.log('Profile stats:', {
-            followerCount: followerCountData,
-            followingCount: followingCountData,
-            isFollowing: isFollowingData
-          });
-
-          setProfile(profileData);
-          setAvatarUrl(profileData.profile_image || null);
-          setRecipes(recipesData);
-          setFollowerCount(followerCountData);
-          setFollowingCount(followingCountData);
-          setIsFollowing(isFollowingData);
-
-        } catch (err: any) {
-          console.error("Error fetching profile data:", err);
-          setError(err.message || "Failed to load profile data.");
-        } finally {
-          setLoading(false);
+        } else {
+          setError("User not found")
         }
-      } catch (err: any) {
-        console.error("Error fetching profile data:", err);
-        setError(err.message || "Failed to load profile data.");
+      } catch (err) {
+        console.error("Error fetching user data:", err)
+        setError(err instanceof Error ? err.message : "Failed to load user profile")
+      } finally {
+        setLoading(false)
       }
     }
-
-    fetchProfileAndRecipes()
-  }, [id])
-
-  const sortRecipes = (recipesToSort: Recipe[], option: string) => {
-    const sorted = [...recipesToSort]
-    switch (option) {
-      case "recent": return sorted.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-      case "likes": return sorted.sort((a, b) => (b.likes_count ?? 0) - (a.likes_count ?? 0))
-      case "views": return sorted.sort((a, b) => (b.views_count ?? 0) - (a.views_count ?? 0))
-      default: return sorted
+    
+    async function fetchUserContent(userId: string) {
+      try {
+        // Fetch user's recipes
+        const { data: recipes } = await supabase
+          .from('recipes')
+          .select('*, users!inner(*)')
+          .eq('user_id', userId)
+        
+        if (recipes) {
+          setUserRecipes(recipes)
+        }
+        
+        // Fetch saved recipes
+        const { data: savedRecipesData } = await supabase
+          .from('recipe_collections')
+          .select(`
+            recipe_id,
+            recipes (
+              recipe_id,
+              title,
+              description,
+              image_url,
+              tags,
+              likes_count,
+              views_count,
+              user_id,
+              user:profiles (
+                username
+              )
+            )
+          `)
+          .eq('user_id', userId) as { data: SavedRecipeData[] | null }
+        
+        if (savedRecipesData) {
+          const savedRecipes = savedRecipesData.map(item => ({
+            id: item.recipes.recipe_id,
+            title: item.recipes.title,
+            description: item.recipes.description,
+            image: item.recipes.image_url,
+            tags: item.recipes.tags || [],
+            likes: item.recipes.likes_count,
+            views: item.recipes.views_count,
+            user_id: item.recipes.user_id,
+            username: item.recipes.user?.username
+          }))
+          setSavedRecipes(savedRecipes)
+        }
+        
+        // Fetch liked recipes
+        const { data: likedRecipesData } = await supabase
+          .from('recipe_likes')
+          .select(`
+            recipe_id,
+            recipes (
+              recipe_id,
+              title,
+              description,
+              image_url,
+              tags,
+              likes_count,
+              views_count,
+              user_id,
+              user:profiles (
+                username
+              )
+            )
+          `)
+          .eq('user_id', userId) as { data: LikedRecipeData[] | null }
+        
+        if (likedRecipesData) {
+          const likedRecipes = likedRecipesData.map(item => ({
+            id: item.recipes.recipe_id,
+            title: item.recipes.title,
+            description: item.recipes.description,
+            image: item.recipes.image_url,
+            tags: item.recipes.tags || [],
+            likes: item.recipes.likes_count,
+            views: item.recipes.views_count,
+            user_id: item.recipes.user_id,
+            username: item.recipes.user?.username
+          }))
+          setLikedRecipes(likedRecipes)
+        }
+      } catch (err) {
+        console.error("Error fetching user content:", err)
+        setError(err instanceof Error ? err.message : "Failed to load user content")
+      }
     }
-  }
+    
+    fetchUsers()
+  }, [params.id])
 
-  const handleEditProfile = () => {
-    router.push("/settings/profile")
-  }
-
-  const handleToggleFollow = async () => {
-    if (!id) return
+  const handleFollowToggle = async () => {
+    if (!currentUser || !user) return
     
     try {
-      const newIsFollowing = await toggleFollow(id, id)
-      setFollowerCount(prev => newIsFollowing ? prev + 1 : prev - 1)
-      setIsFollowing(newIsFollowing)
+      await toggleFollow(currentUser.user_id, user.user_id)
+      setIsFollowing(!isFollowing)
+      setFollowerCount(prev => isFollowing ? prev - 1 : prev + 1)
     } catch (err) {
       console.error("Error toggling follow status:", err)
     }
-  }
-
-  const formatFollowerCount = (count: number) =>
-    count >= 1000 ? (count / 1000).toFixed(1) + "k" : count.toString()
-
-  const handleDeleteRecipe = (recipe_id: string) => {
-    console.log(`Delete recipe action for ${recipe_id} (Backend not implemented yet)`)
-    setRecipes((prev) => prev.filter((r) => r.recipe_id !== recipe_id))
   }
 
   if (loading) {
@@ -220,24 +276,10 @@ export default function UserProfile({ params }: ProfilePageProps) {
       <>
         <Navigation />
         <main className="max-w-[1200px] mx-auto px-4 py-6">
-          <div className="max-w-5xl mx-auto">
-             <div className="flex flex-col md:flex-row gap-6 items-start mb-10">
-                <Skeleton className="w-32 h-32 rounded-full" />
-                <div className="flex-1 space-y-4">
-                    <Skeleton className="h-8 w-48" />
-                    <Skeleton className="h-4 w-full" />
-                    <Skeleton className="h-4 w-3/4" />
-                    <div className="flex gap-6">
-                      <Skeleton className="h-6 w-16" />
-                      <Skeleton className="h-6 w-16" />
-                      <Skeleton className="h-6 w-16" />
-                    </div>
-                </div>
-             </div>
-             <Skeleton className="h-10 w-full mb-6" />
-             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-                {[1, 2, 3].map(i => <Skeleton key={i} className="h-64 w-full" />)}
-             </div>
+          <div className="flex flex-col gap-8">
+            <Skeleton className="h-48" />
+            <Skeleton className="h-24" />
+            <Skeleton className="h-[400px]" />
           </div>
         </main>
         <Footer />
@@ -259,17 +301,17 @@ export default function UserProfile({ params }: ProfilePageProps) {
     )
   }
 
-  if (!profile) {
+  if (!user) {
     return (
-       <>
-         <Navigation />
-         <main className="max-w-[1200px] mx-auto px-4 py-6">
-           <Alert variant="default">
-             <AlertDescription>User profile could not be loaded.</AlertDescription>
-           </Alert>
-         </main>
-         <Footer />
-       </>
+      <>
+        <Navigation />
+        <main className="max-w-[1200px] mx-auto px-4 py-6">
+          <Alert>
+            <AlertDescription>User not found</AlertDescription>
+          </Alert>
+        </main>
+        <Footer />
+      </>
     )
   }
 
@@ -277,123 +319,152 @@ export default function UserProfile({ params }: ProfilePageProps) {
     <>
       <Navigation />
       <main className="max-w-[1200px] mx-auto px-4 py-6">
-        <div className="max-w-5xl mx-auto">
-          <div className="flex flex-col md:flex-row gap-6 items-start mb-10">
-            <div className="relative w-32 h-32">
-              <Avatar className="w-32 h-32">
-                <AvatarImage src={avatarUrl || "/placeholder.svg"} alt={profile.username || "User"} />
-                <AvatarFallback>{profile.username?.slice(0, 2).toUpperCase() || "??"}</AvatarFallback>
-              </Avatar>
-            </div>
-
+        <div className="max-w-[800px] mx-auto flex flex-col gap-8">
+          {/* Profile Header */}
+          <div className="flex items-start gap-8">
+            <Avatar className="w-24 h-24">
+              <AvatarImage src={user.profile_image || "/placeholder.svg"} />
+              <AvatarFallback>{user.username?.[0]?.toUpperCase()}</AvatarFallback>
+            </Avatar>
             <div className="flex-1">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-                <div className="flex items-center gap-2">
-                  <h1 className="text-3xl font-bold">{profile.username || `User ${id?.substring(0, 6) || ''}`}</h1>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div className="inline-flex items-center justify-center rounded-full bg-blue-100 p-1">
-                          <BadgeCheck className="h-5 w-5 text-blue-500" />
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent><p>Verified Chef</p></TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <h1 className="text-2xl font-bold">{user.username}</h1>
+                  {user.bio && (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger>
+                          <BadgeCheck className="w-5 h-5 text-blue-500" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Verified Chef</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
+                  {currentUser?.user_id !== user.user_id && (
+                    <Button 
+                      variant={isFollowing ? "outline" : "default"}
+                      size="sm"
+                      onClick={handleFollowToggle}
+                    >
+                      {isFollowing ? "Following" : "Follow"}
+                    </Button>
+                  )}
                 </div>
-                <div className="flex gap-2">
-                  <Button onClick={handleToggleFollow}> {isFollowing ? "Following" : "Follow"} </Button>
-                  <Button variant="outline" onClick={handleEditProfile}> <Edit className="h-4 w-4 mr-2" /> Edit Profile </Button>
-                </div>
+                {currentUser?.user_id === user.user_id && (
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => router.push("/settings/profile")}>
+                      <Edit className="w-4 h-4 mr-2" />
+                      Edit Profile
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => router.push("/settings")}>
+                      <Settings className="w-4 h-4" />
+                    </Button>
+                  </div>
+                )}
               </div>
-
-              <div className="flex gap-6 mb-4">
-                <div className="text-center">
-                  <p className="font-semibold">{recipes.length}</p>
-                  <p className="text-sm text-muted-foreground">Recipes</p>
-                </div>
-                <div className="text-center">
-                  <p className="font-semibold">{formatFollowerCount(followerCount)}</p>
-                  <p className="text-sm text-muted-foreground">Followers</p>
-                </div>
-                <div className="text-center">
-                  <p className="font-semibold">{followingCount}</p>
-                  <p className="text-sm text-muted-foreground">Following</p>
-                </div>
+              <div className="flex items-center gap-6 mb-4">
+                <span className="text-sm text-gray-600">{userRecipes.length} Recipes</span>
+                <span className="text-sm text-gray-600">{followerCount} Followers</span>
+                <span className="text-sm text-gray-600">{followingCount} Following</span>
               </div>
-
-              <p className="text-muted-foreground">{profile.bio || "No bio available."}</p>
+              {user.bio && (
+                <p className="text-sm text-gray-600 mb-4">{user.bio}</p>
+              )}
             </div>
           </div>
 
-          <Tabs defaultValue="recipes">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="recipes"><Grid className="h-4 w-4 mr-2" />Recipes</TabsTrigger>
-              <TabsTrigger value="saved"><Bookmark className="h-4 w-4 mr-2" />Saved</TabsTrigger>
-              <TabsTrigger value="liked"><Heart className="h-4 w-4 mr-2" />Liked</TabsTrigger>
-            </TabsList>
+          {/* Tabs */}
+          <div className="border-b border-gray-200">
+            <Tabs defaultValue="recipes" className="w-full">
+              <TabsList className="w-full grid grid-cols-3">
+                <TabsTrigger value="recipes" className="flex items-center gap-2">
+                  <Grid className="w-4 h-4" />
+                  Recipes
+                </TabsTrigger>
+                <TabsTrigger value="saved" className="flex items-center gap-2">
+                  <Bookmark className="w-4 h-4" />
+                  Saved
+                </TabsTrigger>
+                <TabsTrigger value="liked" className="flex items-center gap-2">
+                  <Heart className="w-4 h-4" />
+                  Liked
+                </TabsTrigger>
+              </TabsList>
 
-            <TabsContent value="recipes" className="pt-6">
-              {/* Temporarily hidden filter section
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-4">
-                  <h2 className="text-sm font-medium">Filter Recipes</h2>
-                  <Select value={sortOption} onValueChange={setSortOption}>
-                    <SelectTrigger className="w-[180px]">
-                      <SelectValue placeholder="Sort by" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="recent">Most Recent</SelectItem>
-                      <SelectItem value="likes">Most Liked</SelectItem>
-                      <SelectItem value="views">Most Viewed</SelectItem>
-                    </SelectContent>
-                  </Select>
+              <TabsContent value="recipes" className="pt-6">
+                {/* Temporarily hidden filter section
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-4">
+                    <h2 className="text-sm font-medium">Filter Recipes</h2>
+                    <Select value={sortOption} onValueChange={setSortOption}>
+                      <SelectTrigger className="w-[180px]">
+                        <SelectValue placeholder="Sort by" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="recent">Most Recent</SelectItem>
+                        <SelectItem value="likes">Most Liked</SelectItem>
+                        <SelectItem value="views">Most Viewed</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button variant="ghost" size="sm">Clear Filters</Button>
                 </div>
-                <Button variant="ghost" size="sm">Clear Filters</Button>
-              </div>
 
-              <div className="flex flex-wrap gap-2 mb-4">
-                {filterCategories.map((filter) => (
-                  <FilterPill
-                    key={filter}
-                    label={filter}
-                    active={filter === "All"}
-                    onClick={() => console.log(`Filter clicked: ${filter}`)}
-                  />
-                ))}
-              </div>
-              */}
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {filterCategories.map((filter) => (
+                    <FilterPill
+                      key={filter}
+                      label={filter}
+                      active={filter === activeFilter}
+                      onClick={() => setActiveFilter(filter)}
+                    />
+                  ))}
+                </div>
+                */}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-                {recipes.length === 0 ? (
-                  <p>This user hasn't published any recipes yet.</p>
-                ) : (
-                  sortRecipes(recipes, sortOption).map((recipe) => (
-                    <RecipeCard
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+                  {userRecipes.map((recipe) => (
+                    <RecipeCard 
                       key={recipe.recipe_id}
-                      recipe_id={recipe.recipe_id}
+                      id={recipe.recipe_id}
                       title={recipe.title}
                       description={recipe.description}
-                      image_url={recipe.image_url || "/placeholder-recipe.jpg"}
+                      image={recipe.image_url || ''}
                       tags={recipe.tags || []}
-                      likes_count={recipe.likes_count || 0}
-                      views_count={recipe.views_count || 0}
-                      username={recipe.user?.username || 'Unknown'}
-                      onDelete={() => handleDeleteRecipe(recipe.recipe_id)}
+                      likes={recipe.likes_count}
+                      views={recipe.views_count}
+                      user_id={recipe.user_id}
+                      username={user.username}
                     />
-                  ))
-                )}
-              </div>
-            </TabsContent>
+                  ))}
+                </div>
+              </TabsContent>
 
-            <TabsContent value="saved" className="pt-6">
-               <p>Saved recipes will be shown here (Not implemented yet).</p>
-            </TabsContent>
+              <TabsContent value="saved" className="pt-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+                  {savedRecipes.map((recipe) => (
+                    <RecipeCard 
+                      key={recipe.id}
+                      {...recipe}
+                    />
+                  ))}
+                </div>
+              </TabsContent>
 
-            <TabsContent value="liked" className="pt-6">
-               <p>Liked recipes will be shown here (Not implemented yet).</p>
-            </TabsContent>
-          </Tabs>
+              <TabsContent value="liked" className="pt-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+                  {likedRecipes.map((recipe) => (
+                    <RecipeCard 
+                      key={recipe.id}
+                      {...recipe}
+                    />
+                  ))}
+                </div>
+              </TabsContent>
+            </Tabs>
+          </div>
         </div>
       </main>
       <Footer />

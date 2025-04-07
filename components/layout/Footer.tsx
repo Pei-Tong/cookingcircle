@@ -119,20 +119,20 @@ export function Footer() {
               <p>Download our mobile app:</p>
               <div className="flex gap-4 mt-2">
                 <Link href="#" className="hover:opacity-80 transition-opacity">
-                  <img src="/placeholder.svg?height=40&width=120" alt="Download on the App Store" className="h-10" />
+                  <img src="/Footer_Image/apple_store_badge.svg" alt="Download on the App Store" className="h-10" />
                 </Link>
                 <Link href="#" className="hover:opacity-80 transition-opacity">
-                  <img src="/placeholder.svg?height=40&width=120" alt="Get it on Google Play" className="h-10" />
+                  <img src="/Footer_Image/google_play_badge.png" alt="Get it on Google Play" className="h-10" />
                 </Link>
               </div>
             </div>
             <div className="text-sm text-gray-600 md:text-right">
               <p>Payment methods accepted:</p>
               <div className="flex gap-2 mt-2 md:justify-end">
-                <img src="/placeholder.svg?height=30&width=40" alt="Visa" className="h-8" />
-                <img src="/placeholder.svg?height=30&width=40" alt="Mastercard" className="h-8" />
-                <img src="/placeholder.svg?height=30&width=40" alt="American Express" className="h-8" />
-                <img src="/placeholder.svg?height=30&width=40" alt="PayPal" className="h-8" />
+                <img src="/Footer_Image/visacard.png" alt="Visa" className="h-8" />
+                <img src="/Footer_Image/mastercard.png" alt="Mastercard" className="h-8" />
+                <img src="/Footer_Image/apple_pay.png" alt="Apple pay" className="h-8" />
+                <img src="/Footer_Image/paypal.png" alt="PayPal" className="h-8" />
               </div>
             </div>
           </div>

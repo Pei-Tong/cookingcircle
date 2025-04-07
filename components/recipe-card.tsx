@@ -125,7 +125,7 @@ export default function RecipeCard({
             <p className="text-gray-600 text-sm mb-3 line-clamp-2">{description}</p>
             <div className="flex flex-wrap gap-2 mb-2">
               {tags.map((tag) => (
-                <Badge key={tag} variant="outline" className="text-xs bg-white text-black border-gray-200">
+                <Badge key={tag} variant="default" className="text-xs font-medium bg-black text-white">
                   {tag}
                 </Badge>
               ))}
@@ -133,7 +133,15 @@ export default function RecipeCard({
           </CardContent>
           <CardFooter className="p-4 pt-0 flex justify-between text-gray-500 text-sm">
             <div className="flex items-center gap-3">
-              <span className="font-medium hover:text-gray-900">{username}</span>
+              <span 
+                className="font-medium hover:text-gray-900 cursor-pointer"
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (username && username !== "Anonymous") {
+                    router.push(`/profile/${username}`);
+                  }
+                }}
+              >{username}</span>
               {username === "Chef Mario" && (
                 <TooltipProvider>
                   <Tooltip>
