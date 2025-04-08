@@ -36,38 +36,12 @@ A modern recipe sharing and cooking community platform that allows users to expl
 - Tailwind CSS
 - Supabase (PostgreSQL)
 
-## Installation and Usage
-
-```bash
-# Clone the project
-git clone https://github.com/Pei-Tong/cookingcircle.git
-
-# Navigate to project directory
-cd cookingcircle
-
-# Install dependencies
-npm install
-
-# Set up environment variables
-cp .env.example .env.local
-# Edit the .env.local file to add your Supabase credentials
-
-# Start the development server
-npm run dev
-```
-
-Then visit `http://localhost:3000` in your browser.
-
 ## Contributors
 
 - Nguyen, Tat Vu
 - Lee, Kyeongjun
 - Oyelowo, Mujirat
 - Maharjan, Binita
-
-## Contribution Guidelines
-
-Feel free to submit issue reports and pull requests. For major changes, please open an issue first to discuss what you would like to change.
 
 ## License
 
