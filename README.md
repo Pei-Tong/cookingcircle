@@ -58,6 +58,13 @@ npm run dev
 
 Then visit `http://localhost:3000` in your browser.
 
+## Contributors
+
+- Nguyen, Tat Vu
+- Lee, Kyeongjun
+- Oyelowo, Mujirat
+- Maharjan, Binita
+
 ## Contribution Guidelines
 
 Feel free to submit issue reports and pull requests. For major changes, please open an issue first to discuss what you would like to change.
