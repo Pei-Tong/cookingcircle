@@ -14,19 +14,19 @@ A modern recipe sharing and cooking community platform that allows users to expl
 ## Application Screenshots
 
 ### Home Page
-![Home Page](https://github.com/Pei-Tong/cookingcircle/raw/main/screenshots/home.jpg)
+![Home Page](assets/螢幕擷取畫面 2025-04-08 002918.png)
 
 ### Recipe Detail Page
-![Recipe Detail Page](https://github.com/Pei-Tong/cookingcircle/raw/main/screenshots/recipe-detail.jpg)
+![Recipe Detail Page](assets/螢幕擷取畫面 2025-04-08 002932.png)
 
 ### User Profile Page
-![User Profile Page](https://github.com/Pei-Tong/cookingcircle/raw/main/screenshots/profile.jpg)
+![User Profile Page](assets/螢幕擷取畫面 2025-04-08 002947.png)
 
 ### Create New Recipe
-![Create New Recipe](https://github.com/Pei-Tong/cookingcircle/raw/main/screenshots/create-recipe.jpg)
+![Create New Recipe](assets/螢幕擷取畫面 2025-04-08 003007.png)
 
 ### Shopping List
-![Shopping List](https://github.com/Pei-Tong/cookingcircle/raw/main/screenshots/shopping-list.jpg)
+![Shopping List](assets/螢幕擷取畫面 2025-04-08 003032.png)
 
 ## Technology Stack
 
